@@ -636,4 +636,11 @@ ggplot(combined_data, aes(x = Time_of_day,
 
 # Conclusion
 
-Based on the analysis of the pilot study data, the SomnoPose data shows a reasonable level of agreement with the Embletta data, particularly in terms of overall trends and changes in sleeping position. However, a more formal study could be used to align/calibrate both devices so that laying on the back is the same 0 degree angle. Additionally, a more formal study would hopefully make start and stop times more standardized with consistent time recording.
+Based on the analysis of the pilot study data, the SomnoPose data shows a reasonable level of agreement with the Embletta data, particularly in terms of overall trends and changes in sleeping position. However, they were consistently off by around 50 degrees. Although this was adjusted for in the adjusted angle graphs, the peak angles recorded by each device still did not align perfectly. These discrepancies are likely due to differences in device placement, fit, and size. 
+
+Compared to the Embletta, the SomnoPOse has several advantages. It provides additional information, including timestamps and inclination data, and is also significantly less expensive. If one device had to be chosen based on the pilot study, the SomnoPose would provide sufficient information. 
+
+A larger, standardized study would allow for calibration between devices (such as aligning the definition of 0 degrees), reduce variability introduced by uncontrolled factors such as environment or sleep quality, and ensure consistent and reliable start/stop times (which often had to be inferred for the Embletta).
+
+Overall, while the pilot study indicates that the SomnoPose and Embletta yield similar overall patterns, a more formal study is needed to compare the accuracy of the devices and validate the SomnoPose as a reliable alternative
+
