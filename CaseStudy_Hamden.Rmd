@@ -1,0 +1,71 @@
+---
+title: "CaseStudy3"
+output: html_document
+date: "2025-09-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyverse)
+```
+
+```{r}
+data1 <- read.csv("/Users/jaketodd/Desktop/CaseStudy3/Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
+sale_data <- read_excel("/Users/jaketodd/Desktop/CaseStudy3/sales_data.xlsx")
+```
+```{r}
+data_hamden <- data1 %>% filter(Town_Name == 'Hamden')
+```
+assessed = 0.7 * appraised
+
+```{r}
+sale_data = sale_data %>% filter(Description == 'Single Fam M01')
+data_hamden = data_hamden %>% filter(State.Use.Description == 'Single Fam M01')
+```
+
+```{r}
+for(i in 1:nrow(data_hamden)){
+  data_hamden$PID[i] <- str_split(data_hamden$link[i],"-")[[1]][2]
+}
+data_hamden$PID <- as.numeric(data_hamden$PID)
+```
+```{r}
+library(rvest)
+
+for(i in 1:nrow(data_hamden)){
+  temp_html <- read_html(paste0('/Users/jaketodd/Downloads/Hamden_Sept2025/',data_hamden$PID[1],'.html'))
+  tables <- temp_html %>% 
+    html_elements("table") %>%   
+    html_table(fill = TRUE)
+}
+```
+
+
+```{r}
+diff_pct <- (sale_data$`Current Year Appraisal` - sale_data$`Sale Price`)/sale_data$`Sale Price`
+mean(diff_pct)
+```
+log transform -- coefficient on year
+
+```{r}
+sale_data$Location <- paste(sale_data$`Property Number`, sale_data$`Street Name`)
+```
+```{r}
+sale_data$Location[-c(which(sale_data$Location %in% data_hamden$Location))]
+sale_data[c(which(sale_data$Location %in% data_hamden$Location)),]
+```
+
+```{r}
+merged <- left_join(data_hamden, sale_data, by = 'PID')
+```
+
+```{r}
+merge_sale <- subset(merged, !is.na(merged$`Sale Price`))
+m1 <- lm(Sale.Price ~ )
+```
+
