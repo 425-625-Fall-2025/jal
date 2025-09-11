@@ -1,0 +1,67 @@
+---
+title: "Hamden Property Data Fairness"
+author: "S&DS 425/625"
+format: pdf
+editor: visual
+---
+
+## Introduction
+
+The state of Connecticut compiles property data from municipalities across the state and provides it for viewing and downloading on the state government website's CT Geodata Portal <https://geodata.ct.gov/pages/parcels>. Data can also be obtained from the property value assessor's website. For example, here is the website for Hamden, CT: <https://gis.vgsi.com/hamdenct/>.
+
+The file [`Connecticut_CAMA_and_Parcel_Layer_3895368049124948111`](https://yaleedu-my.sharepoint.com/:u:/g/personal/brian_macdonald_yale_edu/EVAE5NykXsdLlqI4ufT6nBwBA0_oJh1jqjPioEMQ_G7Fmg?e=qoYauD) contains data obtained from CT. The property data contain information like location, mailing address, assessed property value, size of the plot of land in acres, floor space in sq ft, whether the property is commercial or residential, etc., and for homes it has details like number of bedrooms, number of bathrooms, etc., and the most recent sale price for each property, and the date of the sale. This is similar to the data you saw in S&DS 361/661, except we aren't providing shapefiles for the property boundaries.
+
+The `sales_data.xlsx` file contains sales data for recent property sales. It is not known whether this data contains more, less, or the same sales information that is contained in the property data.
+
+## Your goals
+
+A Hamden resident who recently purchased his house had his assessed property value significantly increase within a year of the purchase. He began to question whether the assessed value was fair. He would like to use data to see if there is any evidence he could use to contest his assessed value.
+
+Your goal is determine whether the assessed values for residential properties in Hamden, CT are fair and determine if there is any evidence to support contesting the assessed value. Write up your analysis and submit a short PDF report on explaining your reasoning.
+
+Note that when an assessment company decides on a new set of assessed values for properties in a given year (typically using some sort of model), they do a sanity check and compare their assessed values to actual sale prices from the past year.
+
+```{r}
+# load libraries
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+
+data <- readxl::read_excel("sales_data.xlsx")
+head(data)
+```
+
+```{r}
+# load libraries
+library(readxl)
+library(dplyr)
+
+# read in CT property and sales data
+property <- read.csv("Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
+sales <- read_excel("sales_data.xlsx")
+
+# read in Hamden
+
+# glance at data
+head(property)
+head(sales)
+
+# filter for Hamden & single-family homes
+property <- property %>%
+  filter(State.Use.Description == "Single Fam M01" & Town_Name == "Hamden")
+
+sales <- sales %>%
+  filter(Description == "Single Fam M01")
+
+# outer join
+sales$Location <- paste(sales$`Property Number`, sales$`Street Name`)
+merged <- left_join(property, sales, by = "Location")
+
+# glance at data
+head(merged)
+
+# models for sales values
+
+
+# comparison to actual assessed values
+```
