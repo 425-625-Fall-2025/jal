@@ -38,10 +38,15 @@ data_hamden$PID <- as.numeric(data_hamden$PID)
 library(rvest)
 
 for(i in 1:nrow(data_hamden)){
-  temp_html <- read_html(paste0('/Users/jaketodd/Downloads/Hamden_Sept2025/',data_hamden$PID[1],'.html'))
+  temp_html <- read_html(paste0('/Users/jaketodd/Downloads/Hamden_Sept2025/',data_hamden$PID[i],'.html'))
   tables <- temp_html %>% 
     html_elements("table") %>%   
     html_table(fill = TRUE)
+  sale_table <- tables[[5]]
+  sale_table <- sale_table[!sale_table$X1 == "", ] 
+  sale_table = sale_table %>% pivot_wider(names_from = X1, values_from = X2)
+  data_hamden$Sale.Date[i] <- sale_table$`Sale Date`[1]
+  data_hamden$Sale.Price[i] <- sale_table$`Sale Price`[1]
 }
 ```
 
