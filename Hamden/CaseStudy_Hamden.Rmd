@@ -15,8 +15,8 @@ library(tidyverse)
 ```
 
 ```{r}
-data1 <- read.csv("/Users/jaketodd/Desktop/CaseStudy3/Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
-sale_data <- read_excel("/Users/jaketodd/Desktop/CaseStudy3/sales_data.xlsx")
+data1 <- read.csv("Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
+sale_data <- read_excel("sales_data.xlsx")
 ```
 ```{r}
 data_hamden <- data1 %>% filter(Town_Name == 'Hamden')
@@ -38,10 +38,15 @@ data_hamden$PID <- as.numeric(data_hamden$PID)
 library(rvest)
 
 for(i in 1:nrow(data_hamden)){
-  temp_html <- read_html(paste0('/Users/jaketodd/Downloads/Hamden_Sept2025/',data_hamden$PID[1],'.html'))
+  temp_html <- read_html(paste0('/Users/jaketodd/Downloads/Hamden_Sept2025/',data_hamden$PID[i],'.html'))
   tables <- temp_html %>% 
     html_elements("table") %>%   
     html_table(fill = TRUE)
+  sale_table <- tables[[5]]
+  sale_table <- sale_table[!sale_table$X1 == "", ] 
+  sale_table = sale_table %>% pivot_wider(names_from = X1, values_from = X2)
+  data_hamden$Sale.Date[i] <- sale_table$`Sale Date`[1]
+  data_hamden$Sale.Price[i] <- sale_table$`Sale Price`[1]
 }
 ```
 
