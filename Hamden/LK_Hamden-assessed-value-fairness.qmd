@@ -136,7 +136,7 @@ model_data <- merged %>%
     Land.Acres     = as.numeric(Land.Acres),
     Number.of.Bedroom = as.numeric(Number.of.Bedroom),
     Number.of.Baths   = as.numeric(Number.of.Baths),
-    Number.of.Half.Baths = as.numeric(Number.of.Half.Baths),
+    Number.of.Half.Baths = as.numeric(Number.of.Half.Baths)
   )
 
 # linear model predicting market sale price
@@ -169,3 +169,38 @@ ggplot(model_data, aes(x = Predicted.Price)) +
 -   look at subsets of the data for fair and not fair
 
 -   
+
+```{r}
+# make correlation matrix
+library(corrplot)
+
+cor1 <- cor(model_data[, c('Pre.Yr.Assessed.Total', 'Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Number.of.Half.Baths', 'Sale.Price', 'ayb', 'eyb')], use = "pairwise.complete.obs")
+
+corrplot.mixed(cor1, lower.col = "black", upper = "ellipse", tl.col = "black", number.cex = .7, tl.pos = "lt", tl.cex=.7, sig.level = .05)
+
+# limit to potentially relevant variables
+model_data2 <- model_data[, c('Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale.Price', 'ayb', 'eyb')] %>%
+  mutate(Sale.Year = as.numeric(substr(model_data$Sale.Date, nchar(model_data$Sale.Date) - 3, nchar(model_data$Sale.Date))))
+
+# perform best subsets regression
+library(leaps)
+mod2 <- regsubsets(Sale.Price ~ ., data = model_data2, nvmax = 19)
+mod2sum <- summary(mod2)
+
+# find model with the highest adjusted r-squared
+modnum2 <- which.max(mod2sum$adjr2)
+which.max(mod2sum$adjr2)
+modeltemp2 <- model_data2[ ,mod2sum$which[modnum2, ]]
+summary(lm(log(Sale.Price) ~ ., data = modeltemp2))
+
+# find model with the highest BIC
+modBIC <- which.min(mod2sum$bic)
+modeltemp3 <- model_data2[ ,mod2sum$which[modBIC, ]]
+summary(lm(log(Sale.Price) ~ ., data = modeltemp3))
+
+# fit model with the best CP statistic
+modCP <- min(c(1:length(mod2sum$cp))[mod2sum$cp <=
+c(1:length(mod2sum$cp)) + 1])
+modeltemp4 <- model_data2[ , mod2sum$which[modCP, ]]
+summary(lm(log(Sale.Price) ~ ., data = modeltemp4))
+```
