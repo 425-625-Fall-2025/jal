@@ -15,8 +15,8 @@ library(tidyverse)
 ```
 
 ```{r}
-data1 <- read.csv("/Users/jaketodd/Desktop/CaseStudy3/Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
-sale_data <- read_excel("/Users/jaketodd/Desktop/CaseStudy3/sales_data.xlsx")
+data1 <- read.csv("Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
+sale_data <- read_excel("sales_data.xlsx")
 ```
 ```{r}
 data_hamden <- data1 %>% filter(Town_Name == 'Hamden')
