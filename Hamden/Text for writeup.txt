@@ -1,0 +1,52 @@
+A Hamden homeowner saw a large assessment increase shortly after purchasing and wanted to know whether the new assessed value is fair. In order to answer this question, we attempted to recreate the assessor valuation process, by using recent sales to build a pricing model, then applying it to all properties. By comparing predictions to assessments, we determined whether the assessor's values align with our estimate of value.  
+
+
+--------------------------
+
+The histogram below shows the distribution of ASR (Assessed Value/Sale Price ratio). 
+
+The histogram is approximately centered around 0.70, suggesting that on average, properties are properly assessed. This is because the statutory level of assessed value is 70% of fair market value in Connecticut. 
+
+--------------------------
+
+We first performed correlation analysis and best subsets regression to identify which property features are most predictive of sale price.
+
+The correlation plot includes the following variables: Previous Year Assessed Total, Land Acres, Living Area, Effective Area, Total Rooms, Number of Bedroom, Number of Baths, Number of Half Baths, Sale Price, ayb, and eyb. All pairs of variables except Number of Baths and Number of Half Baths had positive or neutral correlations. Living Area and Previous Year Assessed Total, Effective Area and Previous Year Assessed Total, and Living Area and Effective Area had the strongest, positive correlations. Previous Year Assessed Total was also strongly correlated with Total Rooms and Baths. 
+
+--------------------------
+
+Next, we used three evaluation criteria to which and how many property characteristics to include in our model to predict log(Sale Price). 
+
+1. Based on Adjusted R^2, the model with 9 predictors (Land Acres, Living Area, Effective Area, Total Rooms, Number of Bedrooms, Number of Baths, ayb, eyb, and Sale Year) is best. It yields an Adjusted R^2 of 0.563 and demonstrates that Sale Year is strongly predictive, and many of the variables matter.
+
+2. Based on BIC, the model with 4 predictors (Land Acres, Effective Area, Total Rooms, and Sale Year) is best. This model yielded an Adjusted R^2 that is almost the same as the first model (0.557).  
+
+3.  Based on Mallows' Cp, the model with all 9 variables is best.
+
+--------------------------
+
+Next, we built a predictive model using properties that actually sold in 2024. We fit a regression model using the four predictors selected above. Below is the model that we fit. 
+
+
+We then applied the model to properties that did not sell in 2024, in order to obtain an estimate of what those properties would have sold for. 
+
+--------------------------
+
+Finally, we compared each property's assessed value with the predicted value from our model. 
+
+--------------------------
+
+We plotted the ASR for each property in Hamden on a map, using the property's latitude and longitude to plot. Each property is displayed as a point, with the color indicating the ASR value. Properties with high ASRs (over-assessed) are red, and those with low ASRs (under-assessed) are blue. This helps us determine whether location plays a role in fairness of value. 
+
+--------------------------
+
+The plot of Predicted Price vs Assessed Value of properties shows Assessed Value in red and Predicted Price in blue. The Assessed values are typically lower than both the model-predicted and actual sale prices, suggesting that Hamden homes are being undervalued overall. 
+
+--------------------------
+Our analysis shows that homes are generally being undervalued relative to their sales prices. From a homeowner's perspective, this is variable as it yields them a lower property tax bill. 
+
+
+
+
+
+
