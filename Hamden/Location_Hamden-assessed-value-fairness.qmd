@@ -1,0 +1,257 @@
+---
+title: "Hamden Property Data Fairness"
+author: "S&DS 425/625"
+format: pdf
+editor: visual
+---
+
+## Introduction
+
+The state of Connecticut compiles property data from municipalities across the state and provides it for viewing and downloading on the state government website's CT Geodata Portal <https://geodata.ct.gov/pages/parcels>. Data can also be obtained from the property value assessor's website. For example, here is the website for Hamden, CT: <https://gis.vgsi.com/hamdenct/>.
+
+The file [`Connecticut_CAMA_and_Parcel_Layer_3895368049124948111`](https://yaleedu-my.sharepoint.com/:u:/g/personal/brian_macdonald_yale_edu/EVAE5NykXsdLlqI4ufT6nBwBA0_oJh1jqjPioEMQ_G7Fmg?e=qoYauD) contains data obtained from CT. The property data contain information like location, mailing address, assessed property value, size of the plot of land in acres, floor space in sq ft, whether the property is commercial or residential, etc., and for homes it has details like number of bedrooms, number of bathrooms, etc., and the most recent sale price for each property, and the date of the sale. This is similar to the data you saw in S&DS 361/661, except we aren't providing shapefiles for the property boundaries.
+
+The `sales_data.xlsx` file contains sales data for recent property sales. It is not known whether this data contains more, less, or the same sales information that is contained in the property data.
+
+## Your goals
+
+A Hamden resident who recently purchased his house had his assessed property value significantly increase within a year of the purchase. He began to question whether the assessed value was fair. He would like to use data to see if there is any evidence he could use to contest his assessed value.
+
+Your goal is determine whether the assessed values for residential properties in Hamden, CT are fair and determine if there is any evidence to support contesting the assessed value. Write up your analysis and submit a short PDF report on explaining your reasoning.
+
+Note that when an assessment company decides on a new set of assessed values for properties in a given year (typically using some sort of model), they do a sanity check and compare their assessed values to actual sale prices from the past year.
+
+```{r}
+# load libraries
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+
+```
+
+```{r}
+# load libraries
+library(readxl)
+library(dplyr)
+
+# read in CT property and sales data
+sale_data <- read_excel("sales_data.xlsx")
+hamden_data <- read_csv("hamden_data_complete.csv")
+
+# read in Hamden
+
+# glance at data
+head(hamden_data)
+head(sale_data)
+names(sale_data)
+names(hamden_data)
+# outer join
+sale_data$Location <- paste(sale_data$`Property Number`, sale_data$`Street Name`)
+merged <- left_join(hamden_data, sale_data, by = "Location")
+
+# glance at data
+head(merged)
+
+# models for sales values
+names(merged)
+head(merged$Location)
+# comparison to actual assessed values
+```
+
+-   land acres, living area, effective area, total rooms, bedrooms, baths,
+
+-   condition
+
+```{r}
+# coerce to numeric (strip $ and commas if present)
+merged <- merged %>%
+  mutate(
+    Assessed.Total = readr::parse_number(as.character(Assessed.Total)),
+    Sale.Price     = readr::parse_number(as.character(Sale.Price))
+  )%>%
+  filter(Sale.Price > 0)
+
+
+# now compute ratios
+merged <- merged %>%
+  mutate(
+    ASR = Assessed.Total / Sale.Price,
+    Equalized_Ratio = (Assessed.Total / 0.70) / Sale.Price
+  )
+# histogram of ASR
+merged$ASR
+merged$Assessed.Total
+head(merged$ASR)
+str(merged$ASR)
+summary(merged$ASR)
+merged <- merged %>%
+  filter(ASR < 1)
+
+
+# plot from the correct dataframe
+ggplot(merged, aes(x = ASR)) +
+  geom_histogram(binwidth = 0.05, fill = "steelblue", color = "white") +
+  geom_vline(xintercept = 0.70, color = "red", linetype = "dashed") +
+  labs(
+    title = "Hamden Assessment-to-Sale Ratio (ASR)",
+    x = "Assessment-to-Sale Ratio",
+    y = "Count"
+  )
+```
+
+```{r}
+# coefficient of dispersion
+cod <- function(r) {
+  100 * median(abs(r - median(r, na.rm=TRUE)) / median(r, na.rm=TRUE), na.rm=TRUE)
+}
+
+# PRD: mean ASR / weighted mean ASR
+prd <- function(asr, sp) {
+  mean(asr, na.rm=TRUE) / (sum(merged$Assessed.Total, na.rm=TRUE) / sum(sp, na.rm=TRUE))
+}
+
+# run summary
+ratio_summary <- merged %>%
+  summarise(
+    n_sales = n(),
+    median_asr = median(ASR, na.rm=TRUE),
+    mean_asr = mean(ASR, na.rm=TRUE),
+    COD = cod(ASR),
+    PRD = prd(ASR, Sale.Price)
+  )
+
+# PRB regression
+fit_prb <- lm(log(ASR) ~ log(Sale.Price), data = merged)
+prb_slope <- coef(fit_prb)[2]
+```
+
+```{r}
+ratio_summary
+```
+
+```{r}
+model_data <- merged %>%
+  mutate(
+    Sale     = readr::parse_number(as.character(Sale.Price)),
+    Assessed.Total = readr::parse_number(as.character(Assessed.Total)),
+    Living.Area    = as.numeric(Living.Area),
+    Land.Acres     = as.numeric(Land.Acres),
+    Number.of.Bedroom = as.numeric(Number.of.Bedroom),
+    Number.of.Baths   = as.numeric(Number.of.Baths),
+    Number.of.Half.Baths = as.numeric(Number.of.Half.Baths),
+  )
+
+# linear model predicting market sale price
+fit <- lm(Sale.Price ~ Living.Area + Land.Acres + Number.of.Baths +
+            Number.of.Half.Baths,
+          data = model_data)
+
+summary(fit)
+
+model_data <- model_data %>%
+  mutate(
+    Predicted.Price = predict(fit, newdata = model_data),
+    Ratio_Assess = Assessed.Total / Predicted.Price,
+    Ratio_Sale   = Sale.Price / Predicted.Price
+  )
+
+```
+
+```{r}
+ggplot(model_data, aes(x = Predicted.Price)) +
+  geom_point(aes(y = Sale.Price), color = "blue", alpha = 0.5) +
+  geom_point(aes(y = Assessed.Total / 0.70), color = "red", alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  labs(title = "Predicted vs Actual vs Assessed Market Values",
+       x = "Predicted Price (Model)",
+       y = "Value",
+       caption = "Blue = Actual Sale, Red = Assessor (Equalized)")
+```
+
+-   look at subsets of the data for fair and not fair
+
+```{r}
+library(tidygeocoder)
+
+hamden_geo <- model_data %>%
+  geocode(Location, method = "osm", lat = latitude , long = longitude)
+names(hamden_geo)
+
+library(ggplot2)
+
+ggplot(hamden_geo, aes(x = longitude, y = latitude, color = ASR)) +
+  geom_point(alpha = 0.7) +
+  scale_color_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.70) +
+  coord_equal() +
+  labs(
+    title = "Hamden Assessment-to-Sale Ratios by Address",
+    x = "Longitude", y = "Latitude", color = "ASR"
+  )
+
+write.csv(hamden_geo, "final_data.csv", row.names = FALSE)
+```
+
+```{r}
+library(leaflet)
+
+leaflet(hamden_geo) %>%
+  addTiles() %>%  # adds OpenStreetMap background
+  addCircleMarkers(
+    lng = ~longitude, lat = ~latitude,
+    radius = 5,
+    color = ~colorNumeric(palette = c("blue","white","red"), domain = hamden_geo$ASR)(ASR),
+    fillOpacity = 0.7,
+    popup = ~paste0(Location, "<br>ASR = ", round(ASR, 2))
+  ) %>%
+  addLegend(
+    "bottomright", 
+    pal = colorNumeric(c("blue","white","red"), hamden_geo$ASR),
+    values = ~ASR,
+    title = "ASR",
+    opacity = 1
+  )
+
+```
+
+**ONLY CODE BELOW HERE IS NEEDED**
+
+```{r}
+# Read the object from the file
+centroids <- readRDS("centroids.no.geometry.rds")
+
+# See what type of object it is
+class(centroids)
+
+# Peek at the data
+head(centroids)
+head(hamden_geo)
+
+# Example with left join (keep all rows from hamden_geo)
+hamden_joined <- hamden_geo %>%
+  left_join(centroids, by = c("link" = "Link"))
+
+# Check result
+hamden_joined
+```
+
+```{r}
+library(leaflet)
+
+leaflet(hamden_joined) %>%
+  addTiles() %>%  # adds OpenStreetMap background
+  addCircleMarkers(
+    lng = ~point.x, lat = ~point.y,
+    radius = 5,
+    color = ~colorNumeric(palette = c("blue","white","red"), domain = hamden_joined$ASR)(ASR),
+    fillOpacity = 0.7,
+    popup = ~paste0(Location.y, "<br>ASR = ", round(ASR, 2))
+  ) %>%
+  addLegend(
+    "bottomright", 
+    pal = colorNumeric(c("blue","white","red"), hamden_joined$ASR),
+    values = ~ASR,
+    title = "ASR",
+    opacity = 1
+  )
+
+```
