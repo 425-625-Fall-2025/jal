@@ -101,7 +101,7 @@ model_data <- merged %>%
   )
 ```
 
-Next, we built a predictive model using properties that actually sold in 2024 as training data. We then applied the model to properties that did not sell in 2024, in order to obtain an estimate of what those properties would have sold for. 
+Next, we built a predictive model using properties that actually sold in 2024. We then applied the model to properties that did not sell in 2024 in order to obtain an estimate of what those properties would have sold for in 2024. 
 
 # model training
 ```{r}
@@ -119,7 +119,7 @@ for(i in 1:nrow(train_data)){
 train_data$PID <- as.numeric(train_data$PID)
 
 ```
-We then performed correlation analysis and best subsets regression to identify which property features are most predictive of sale price.
+We then performed correlation analysis and stepwise regression to identify which property features are most predictive of sale price in 2024.
 
 # model selection
 ```{r}
@@ -154,15 +154,15 @@ pred_sale <- predict(fit, newdata = test_data)
 test_data$Sale_2024 <- exp(pred_sale)
 ```
 
-The correlation plot includes the following variables: Previous Year Assessed Total, Land Acres, Living Area, Effective Area, Total Rooms, Number of Bedroom, Number of Baths, Number of Half Baths, Sale Price, ayb, and eyb. All pairs of variables except Number of Baths and Number of Half Baths had positive or neutral correlations. Living Area and Previous Year Assessed Total, Effective Area and Previous Year Assessed Total, and Living Area and Effective Area had the strongest, positive correlations. Previous Year Assessed Total was also strongly correlated with Total Rooms and Baths. 
+The correlation plot includes the following variables: Sale Price, Previous Year Assessed Total, Land Acres, Living Area, Effective Area, Total Rooms, Number of Bedroom, Number of Baths, Number of Half Baths, ayb, eyb, and appraised 2009 value. All pairs of variables except Number of Baths and Number of Half Baths had positive or neutral correlations. Previous year assess total, appraised value in 2009, living area, and effective area had the highest correlations with Sale Price, while ayb and number of half baths had the lowest correlation with sale price.
 
 Next, we used BIC-based stepwise selection and AIC-based stepwise selection to decide which predictors to use in our model. 
 
-BIC-based stepwise selection chose a model with 3 predictors: Sale Price, eyb, and Total Rooms, yielding an  Adjusted R^2 of about 0.90. Sale Price had the lowest p value, and eyb and Total Rooms also had positive coefficients and significant p values. 
+BIC-based stepwise selection chose a model with 3 predictors: Appraised 2009 value, land acres, and number of bedrooms, yielding an  Adjusted R^2 of about 0.7549. While all coefficients are significant, land acres has a negative coefficient which does not make sense.
 
-AIC-based stepwise selection chose a model with 6 predictors: Effective Area, Total Rooms, Number of Bedrooms, Sale Price, ayb, and eyb. All coefficients except Number of Bedrooms are positive, and the Adjusted R^2 is about 0.90. 
+AIC-based stepwise selection chose a model with 4 predictors: Land acres, number of bedrooms, number of baths, and appraised value in 2009. This model resulted in an adjusted R^2 value of 0.7565. Like the BIC model, land acres has a negative coefficient which does not make sense. Furthermore, all predictors except number of baths is significant.
 
-We chose the AIC-based model as our final model, as it had a slightly higher Adjusted R^2 and included more predictors. All coeffients in our model are positive, and all predictors are significnat. Number of Baths and Number of Bedrooms have the largest coefficients, while Land Acres has the smallest. 
+We chose the AIC-based model as our final model, as it had a slightly higher Adjusted R^2 and included more predictors.
 
 Finally, we compared each property's assessed value with the predicted value from our model. 
 
