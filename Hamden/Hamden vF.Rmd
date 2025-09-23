@@ -96,46 +96,7 @@ model_data <- merged %>%
   )
 ```
 
-We first performed correlation analysis and best subsets regression to identify which property features are most predictive of sale price.
-
-# model selection
-```{r}
-# make correlation matrix
-cor1 <- cor(model_data[, c('Pre.Yr.Assessed.Total', 'Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Number.of.Half.Baths', 'Sale.Price', 'ayb', 'eyb')], use = "pairwise.complete.obs")
-
-corrplot.mixed(cor1, lower.col = "black", upper = "ellipse", tl.col = "black", number.cex = .7, tl.pos = "lt", tl.cex=.7, sig.level = .05)
-
-# limit to potentially relevant variables
-model_data2 <- model_data[, c('Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale.Price', 'Sale_2024', 'ayb', 'eyb')]
-
-# perform best subsets regression
-full_model <- lm(log(Sale_2024) ~ ., data = model_data2)
-null_model <- lm(log(Sale_2024) ~ 1, data = model_data2)
-n <- nrow(model_data2)
-
-# stepwise regression using BIC
-stepwise_bic_model <- stepAIC(null_model,
-                              direction = "both",
-                              scope = list(upper = full_model, lower = null_model),
-                              k = log(n))
-summary(stepwise_bic_model)
-
-# stepwise regression AIC
-stepwise_aic_model <- stepAIC(full_model, direction = "both", trace = FALSE)
-summary(stepwise_aic_model)
-```
-
-The correlation plot includes the following variables: Previous Year Assessed Total, Land Acres, Living Area, Effective Area, Total Rooms, Number of Bedroom, Number of Baths, Number of Half Baths, Sale Price, ayb, and eyb. All pairs of variables except Number of Baths and Number of Half Baths had positive or neutral correlations. Living Area and Previous Year Assessed Total, Effective Area and Previous Year Assessed Total, and Living Area and Effective Area had the strongest, positive correlations. Previous Year Assessed Total was also strongly correlated with Total Rooms and Baths. 
-
-Next, we used BIC-based stepwise selection and AIC-based stepwise selection to decide which predictors to use in our model. 
-
-BIC-based stepwise selection chose a model with 3 predictors: Sale Price, eyb, and Total Rooms, yielding an  Adjusted R^2 of about 0.90. Sale Price had the lowest p value, and eyb and Total Rooms also had positive coefficients and significant p values. 
-
-AIC-based stepwise selection chose a model with 6 predictors: Effective Area, Total Rooms, Number of Bedrooms, Sale Price, ayb, and eyb. All coefficients except Number of Bedrooms are positive, and the Adjusted R^2 is about 0.90. 
-
-Next, we built a predictive model using properties that actually sold in 2024. We fit a regression model using Land Acres, Number of Baths, Number of Bedrooms, and eyb. Below is the model that we fit. 
-
-We then applied the model to properties that did not sell in 2024, in order to obtain an estimate of what those properties would have sold for. 
+Next, we built a predictive model using properties that actually sold in 2024 as training data. We then applied the model to properties that did not sell in 2024, in order to obtain an estimate of what those properties would have sold for. 
 
 # model training
 ```{r}
@@ -172,18 +133,50 @@ train_data$Sale.Year <- as.numeric(train_data$Sale.Year)
 for(i in 1:nrow(train_data)){
   train_data$Sale.Price[i] <- substr(train_data$Sale.Price[i], 2, nchar(train_data$Sale.Price[i]))
 }
+```
+We then performed correlation analysis and best subsets regression to identify which property features are most predictive of sale price.
 
-#training dataset model
+# model selection
+```{r}
+# make correlation matrix
+cor1 <- cor(train_data[, c('Sale_2024', 'Pre.Yr.Assessed.Total', 'Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Number.of.Half.Baths', 'ayb', 'eyb')], use = "pairwise.complete.obs")
 
-fit <- lm(log(Sale_2024) ~ Land.Acres + Number.of.Baths + Number.of.Bedroom + eyb,
-          data = train_data)
+corrplot.mixed(cor1, lower.col = "black", upper = "ellipse", tl.col = "black", number.cex = .7, tl.pos = "lt", tl.cex=.7, sig.level = .05)
 
-summary(fit)
+# limit to potentially relevant variables
+train_model_data <- train_data[, c('Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale_2024', 'ayb', 'eyb')]
+
+# perform best subsets regression
+full_model <- lm(log(Sale_2024) ~ ., data = train_model_data)
+null_model <- lm(log(Sale_2024) ~ 1, data = train_model_data)
+n <- nrow(train_model_data)
+
+# stepwise regression using BIC
+stepwise_bic_model <- stepAIC(null_model,
+                              direction = "both",
+                              scope = list(upper = full_model, lower = null_model),
+                              k = log(n))
+summary(stepwise_bic_model)
+
+# stepwise regression AIC
+stepwise_aic_model <- stepAIC(full_model, direction = "both", trace = FALSE)
+summary(stepwise_aic_model)
+
+# final model
+fit <- stepwise_aic_model
 pred_sale <- predict(fit, newdata = test_data) 
-test_data$Sale_2024 <- pred_sale
+test_data$Sale_2024 <- exp(pred_sale)
 ```
 
-All coeffients in our model are positive, and all predictors are significnat. Number of Baths and Number of Bedrooms have the largest coefficients, while Land Acres has the smallest. 
+The correlation plot includes the following variables: Previous Year Assessed Total, Land Acres, Living Area, Effective Area, Total Rooms, Number of Bedroom, Number of Baths, Number of Half Baths, Sale Price, ayb, and eyb. All pairs of variables except Number of Baths and Number of Half Baths had positive or neutral correlations. Living Area and Previous Year Assessed Total, Effective Area and Previous Year Assessed Total, and Living Area and Effective Area had the strongest, positive correlations. Previous Year Assessed Total was also strongly correlated with Total Rooms and Baths. 
+
+Next, we used BIC-based stepwise selection and AIC-based stepwise selection to decide which predictors to use in our model. 
+
+BIC-based stepwise selection chose a model with 3 predictors: Sale Price, eyb, and Total Rooms, yielding an  Adjusted R^2 of about 0.90. Sale Price had the lowest p value, and eyb and Total Rooms also had positive coefficients and significant p values. 
+
+AIC-based stepwise selection chose a model with 6 predictors: Effective Area, Total Rooms, Number of Bedrooms, Sale Price, ayb, and eyb. All coefficients except Number of Bedrooms are positive, and the Adjusted R^2 is about 0.90. 
+
+We chose the AIC-based model as our final model, as it had a slightly higher Adjusted R^2 and included more predictors. All coeffients in our model are positive, and all predictors are significnat. Number of Baths and Number of Bedrooms have the largest coefficients, while Land Acres has the smallest. 
 
 Finally, we compared each property's assessed value with the predicted value from our model. 
 
