@@ -118,6 +118,26 @@ for(i in 1:nrow(train_data)){
 }
 train_data$PID <- as.numeric(train_data$PID)
 
+library(rvest)
+
+for(i in 1:nrow(train_data)){
+  temp_html <- read_html(paste0('Hamden_Sept2025/',train_data$PID[i],'.html'))
+  tables <- temp_html %>% 
+    html_elements("table") %>%   
+    html_table(fill = TRUE)
+  sale_table <- tables[[6]]
+  train_data$Sale.Date[i] <- sale_table$`Sale Date`[2]
+  train_data$Sale.Price[i] <- sale_table$`Sale Price`[2]
+}
+
+for(i in 1:nrow(train_data)){
+  train_data$Sale.Year[i] <- substr(train_data$Sale.Date[i], nchar(train_data$Sale.Date[i]) - 3, nchar(train_data$Sale.Date[i]))
+}
+train_data$Sale.Year <- as.numeric(train_data$Sale.Year)
+
+for(i in 1:nrow(train_data)){
+  train_data$Sale.Price[i] <- substr(train_data$Sale.Price[i], 2, nchar(train_data$Sale.Price[i]))
+}
 ```
 We then performed correlation analysis and best subsets regression to identify which property features are most predictive of sale price.
 
@@ -168,11 +188,6 @@ Finally, we compared each property's assessed value with the predicted value fro
 
 # plot
 ```{r}
-# residuals and assumptions
-qqnorm(scale(resid(fit)))
-abline(0,1)
-
-# values
 ggplot(test_data, aes(x = Sale_2024)) +
   geom_point(aes(y = Sale.Price), color = "blue", alpha = 0.5) +
   geom_point(aes(y = Assessed.Total / 0.70), color = "red", alpha = 0.5) +
@@ -200,6 +215,7 @@ In addition, we plotted the ASR for each property in Hamden on a map, using the 
 ```{r}
 # Read the object from the file
 centroids <- readRDS("centroids.no.geometry.rds")
+hamden_geo <- read_csv("final_data.csv")
 
 # See what type of object it is
 class(centroids)
@@ -209,7 +225,7 @@ head(centroids)
 head(hamden_geo)
 
 # Example with left join (keep all rows from hamden_geo)
-hamden_joined <- test_data %>%
+hamden_joined <- hamden_geo %>%
   left_join(centroids, by = c("link" = "Link"))
 
 # Check result
@@ -235,55 +251,5 @@ leaflet(hamden_joined) %>%
   )
 ```
 
-```{r}
-library(leaflet)
-
-# 1) robust symmetric domain around 0 using 95th pct of |residual|
-r <- abs(hamden_joined$residual)
-m <- quantile(r, 0.95, na.rm = TRUE)   # try 0.90–0.98 if needed
-dom <- c(-m, m)
-
-# 2) palette using trimmed domain (values outside get clipped to ends)
-pal <- colorNumeric(
-  palette = c("blue","white","red"),
-  domain  = dom,
-  na.color = "transparent"
-)
-
-leaflet(hamden_joined) %>%
-  addTiles() %>%
-  addCircleMarkers(
-    lng = ~point.x, lat = ~point.y,
-    radius = 5, stroke = TRUE, color = "#333", weight = 0.5,
-    fill = TRUE, fillColor = ~pal(residual), fillOpacity = 0.7,
-    popup = ~paste0(Location.y, "<br>residual = ", round(residual, 2))
-  ) %>%
-  addLegend("bottomright", pal = pal, values = dom,  # use dom, not ~residual
-            title = "residual (trimmed ±95th pct)", opacity = 1)
-
-```
-
 Our analysis shows that homes are generally being undervalued relative to their sales prices. From a homeowner's perspective, this is variable as it yields them a lower property tax bill. 
-
-```{r}
-library(sf); library(dplyr)
-
-# crude polyline along CT shore of Long Island Sound (edit if you like)
-shore_pts <- matrix(
-  c(-73.73,41.03,  -73.37,41.03,  -73.05,41.05,  -72.60,41.15,
-    -72.30,41.25,  -72.05,41.27,  -71.80,41.30), 
-  ncol=2, byrow=TRUE)
-shore <- st_sfc(st_linestring(shore_pts), crs = 4326)
-
-ham <- hamden_joined %>%
-  mutate(longitude = as.numeric(longitude), latitude = as.numeric(latitude)) %>%
-  filter(!is.na(longitude), !is.na(latitude))
-pts <- st_as_sf(ham, coords=c("longitude","latitude"), crs=4326)
-
-# distance in meters after projecting
-pts_m   <- st_transform(pts, 32618)
-shore_m <- st_transform(shore, 32618)
-ham$dist_to_coast_km <- as.numeric(st_distance(pts_m, shore_m)) / 1000
-
-```
 
