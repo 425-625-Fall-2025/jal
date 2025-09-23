@@ -182,6 +182,11 @@ Finally, we compared each property's assessed value with the predicted value fro
 
 # plot
 ```{r}
+# residuals and assumptions
+qqnorm(scale(resid(fit)))
+abline(0,1)
+
+# values
 ggplot(test_data, aes(x = Sale_2024)) +
   geom_point(aes(y = Sale.Price), color = "blue", alpha = 0.5) +
   geom_point(aes(y = Assessed.Total / 0.70), color = "red", alpha = 0.5) +
