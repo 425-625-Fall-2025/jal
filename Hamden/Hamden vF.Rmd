@@ -22,8 +22,8 @@ A Hamden homeowner saw a large assessment increase shortly after purchasing and 
 # read in CT property and sales data
 sale_data <- read_excel("sales_data.xlsx")
 hamden_data <- read_csv("final_data.csv")
-data_2009 <- read_csv("Hamden2009.csv")
-data_2009 = data_2009 %>% dplyr::select(c('pid', 'appraisedvalue'))
+d2009 <- read_csv("Hamden2009.csv")
+data_2009 = d2009 %>% dplyr::select(c('pid', 'appraisedvalue'))
 names(data_2009) <- c('PID', 'appraised_2009')
 hamden_data <- hamden_data %>% rename(PID = PID.x)
 
@@ -45,6 +45,7 @@ head(merged)
 names(merged)
 head(merged$Location)
 ```
+
 The histogram below shows the distribution of ASR (Assessed Value/Sale Price ratio). 
 
 # look at data relationships
@@ -66,13 +67,14 @@ merged <- merged %>%
   )
 
 # histogram of ASR
-merged$ASR
-merged$Assessed.Total
 head(merged$ASR)
 str(merged$ASR)
 summary(merged$ASR)
 merged <- merged %>%
   filter(ASR < 1)
+
+# median of data
+median(merged$ASR, na.rm = TRUE)
 
 # plot from the correct dataframe
 ggplot(merged, aes(x = ASR)) +
@@ -85,7 +87,7 @@ ggplot(merged, aes(x = ASR)) +
   )
 ```
 
-The histogram is approximately centered around 0.70, suggesting that on average, properties are properly assessed. This is because the statutory level of assessed value is 70% of fair market value in Connecticut. 
+The median assessed value over sale price ratio is 61%, which is lower than the statutory level of assessed value of 70% for fair market value in Connecticut. 
 
 # prep data
 ```{r}
