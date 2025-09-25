@@ -12,6 +12,7 @@ library(readxl)
 library(ggplot2)
 library(tidyverse)
 library(corrplot)
+library(caret)
 library(MASS)
 library(leaflet)
 ```
@@ -144,13 +145,35 @@ We then performed correlation analysis and best subsets regression to identify w
 # model selection
 ```{r}
 # make correlation matrix
-cor1 <- cor(train_data[, c('Sale_2024', 'Pre.Yr.Assessed.Total', 'Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Number.of.Half.Baths', 'ayb', 'eyb', 'appraised_2009')], use = "pairwise.complete.obs")
+cor1 <- cor(train_data[, c('Sale_2024', 'Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Number.of.Half.Baths', 'ayb', 'eyb', 'appraised_2009')], use = "pairwise.complete.obs")
 
 corrplot.mixed(cor1, lower.col = "black", upper = "ellipse", tl.col = "black", number.cex = .7, tl.pos = "lt", tl.cex=.7, sig.level = .05)
 
 # limit to potentially relevant variables
 train_model_data <- train_data[, c('Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale_2024', 'ayb', 'eyb', 'appraised_2009')]
 train_model_data = train_model_data[!is.na(train_model_data$appraised_2009),]
+
+# cross validation example code
+set.seed(425)
+train_control <- trainControl(
+  method = "cv",
+  number = 5,
+  savePredictions = "final", 
+  verboseIter = TRUE
+)
+
+# stepwise regression example code
+  model_cv_stepwise <- train(
+      Fertility ~ .,
+      data = swiss,
+      method = "lmStepAIC",
+      trControl = train_control,
+      trace = FALSE
+    )
+
+# results example code
+    print(model_cv_stepwise)
+    model_cv_stepwise$results
 
 # perform best subsets regression
 full_model <- lm(log(Sale_2024) ~ ., data = train_model_data)
