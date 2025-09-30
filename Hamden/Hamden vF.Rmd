@@ -12,6 +12,8 @@ library(readxl)
 library(ggplot2)
 library(tidyverse)
 library(corrplot)
+library(caret)
+library(cv)
 library(MASS)
 library(leaflet)
 ```
@@ -23,8 +25,6 @@ A Hamden homeowner saw a large assessment increase shortly after purchasing and 
 sale_data <- read_excel("sales_data.xlsx")
 hamden_data <- read_csv("final_data.csv")
 d2009 <- read_csv("Hamden2009.csv")
-data_2009 = d2009 %>% dplyr::select(c('pid', 'appraisedvalue'))
-names(data_2009) <- c('PID', 'appraised_2009')
 hamden_data <- hamden_data %>% rename(PID = PID.x)
 
 # glance at data
@@ -36,7 +36,6 @@ names(hamden_data)
 # outer join
 sale_data$Location <- paste(sale_data$`Property Number`, sale_data$`Street Name`)
 merged <- left_join(hamden_data, sale_data, by = "Location")
-merged <- left_join(hamden_data, data_2009, by = "PID")
 
 # glance at data
 head(merged)
@@ -123,57 +122,71 @@ train_data$PID <- as.numeric(train_data$PID)
 ```
 We then performed correlation analysis and stepwise regression to identify which property features are most predictive of sale price in 2024.
 
-# model selection
+# look at data correlations and linear relationships
 ```{r}
+# limit to potentially relevant variables
+train_model_data <- train_data[, c('Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale_2024', 'ayb', 'eyb')]
+
 # make correlation matrix
-cor1 <- cor(train_data[, c('Sale_2024', 'Pre.Yr.Assessed.Total', 'Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Number.of.Half.Baths', 'ayb', 'eyb', 'appraised_2009')], use = "pairwise.complete.obs")
+cor1 <- cor(train_model_data)
 
 corrplot.mixed(cor1, lower.col = "black", upper = "ellipse", tl.col = "black", number.cex = .7, tl.pos = "lt", tl.cex=.7, sig.level = .05)
 
-# limit to potentially relevant variables
-train_model_data <- train_data[, c('Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale_2024', 'ayb', 'eyb', 'appraised_2009')]
-train_model_data = train_model_data[!is.na(train_model_data$appraised_2009),]
+# make scatterplot matrix
+library(psych)
+pairs.panels(train_model_data, 
+             method = "pearson",
+             hist.col = "#00AFBB",
+             density = TRUE
+             )
+```
+We see that Living Area, Number of Bedrooms, Number of Baths, and Effective Year Built have the strongest correlations with Sale Price. However, there appear to be correlations between these potential predictor variables, and we therefore need to be careful of collinearity when building our model. For example, Living Area is correlated with Effective Area (0.98) and Total Rooms (0.79).
 
-# perform best subsets regression
-full_model <- lm(log(Sale_2024) ~ ., data = train_model_data)
-null_model <- lm(log(Sale_2024) ~ 1, data = train_model_data)
-n <- nrow(train_model_data)
+In terms of potential transformations, we see that Sale Price is right-skewed and may benefit from a log transformation.
 
-# stepwise regression using BIC
-stepwise_bic_model <- stepAIC(null_model,
-                              direction = "both",
-                              scope = list(upper = full_model, lower = null_model),
-                              k = log(n))
-summary(stepwise_bic_model)
+There appear to be linear relationships between Sale Price and Land Acres, Living Area, Effective Area, Number of Bedrooms, and Number of Baths. However, there may be nonlinear relationships between Sale Price and Age at Sale and Effective Year Built.
 
-# stepwise regression AIC
-stepwise_aic_model <- stepAIC(full_model, direction = "both", trace = FALSE)
-summary(stepwise_aic_model)
+# model selection
+```{r}
+# stepwise regression using AIC
+set.seed(4250)
+m.full <- lm(log(Sale_2024) ~ ., data = train_model_data)
+m.null <- lm(log(Sale_2024) ~ 1, data = train_model_data)
+m.select <- stepAIC(
+  m.null,
+  direction = "forward",
+  trace = FALSE,
+  scope = list(lower =  ~ 1, upper = formula(m.full))
+)
+summary(m.select)
+
+# 10-fold cross-validation for stepwise regression
+cv.select <- cv(
+  selectStepAIC,
+  data = train_model_data,
+  seed = 4250,
+  working.model = m.null,
+  direction = "forward",
+  scope = list(lower =  ~ 1, upper = formula(m.full))
+)
+summary(cv.select)
+compareFolds(cv.select)
 
 # final model
-fit <- stepwise_aic_model
+fit <- m.select
 pred_sale <- predict(fit, newdata = test_data) 
 test_data$Sale_2024 <- exp(pred_sale)
 ```
+We performed stepwise regression using AIC and 10-fold cross-validation to select the best model. The final model includes Living Area, Number of Bedrooms, Number of Baths, and Effective Year Built as predictors. Based on cross-validation, there is no sign of significant overfitting, as our full-sample RMSE (0.232) is similar to the average cross-validated RMSE (0.238).
 
-The correlation plot includes the following variables: Sale Price, Previous Year Assessed Total, Land Acres, Living Area, Effective Area, Total Rooms, Number of Bedroom, Number of Baths, Number of Half Baths, ayb, eyb, and appraised 2009 value. All pairs of variables except Number of Baths and Number of Half Baths had positive or neutral correlations. Previous year assess total, appraised value in 2009, living area, and effective area had the highest correlations with Sale Price, while ayb and number of half baths had the lowest correlation with sale price.
-
-Next, we used BIC-based stepwise selection and AIC-based stepwise selection to decide which predictors to use in our model. 
-
-BIC-based stepwise selection chose a model with 3 predictors: Appraised 2009 value, land acres, and number of bedrooms, yielding an  Adjusted R^2 of about 0.7549. While all coefficients are significant, land acres has a negative coefficient which does not make sense.
-
-AIC-based stepwise selection chose a model with 4 predictors: Land acres, number of bedrooms, number of baths, and appraised value in 2009. This model resulted in an adjusted R^2 value of 0.7565. Like the BIC model, land acres has a negative coefficient which does not make sense. Furthermore, all predictors except number of baths is significant.
-
-We chose the AIC-based model as our final model, as it had a slightly higher Adjusted R^2 and included more predictors.
-
-Finally, we compared each property's assessed value with the predicted value from our model. 
-
-# plot
+# linear model assumptions
 ```{r}
-# residuals and assumptions
-qqnorm(scale(resid(fit)))
-abline(0,1)
+plot(fit)
+```
+The  plots above show that the linear model assumptions are reasonably satisfied. The residuals appear to be normally distributed, homoskedastic, and there is no obvious pattern in the residuals vs fitted values plot.
 
+# plots
+```{r}
 # values
 ggplot(test_data, aes(x = Sale_2024)) +
   geom_point(aes(y = Sale.Price), color = "blue", alpha = 0.5) +
