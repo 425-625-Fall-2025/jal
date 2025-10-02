@@ -26,6 +26,59 @@ A Hamden homeowner saw a large assessment increase shortly after purchasing and 
 
 [______ insert description of how we scraped, cleaned, and merged the data]
 
+THE PART BELOW IS NOT DONE! I have not added in the web scraping part, and currently the dataframe has 13k rows, but the one we were using only has 7k.
+```{r, eval=FALSE}
+# read in CT property and sales data
+sale_data <- read_excel("sales_data.xlsx")
+sale_data = sale_data %>% filter(Description == 'Single Fam M01')
+
+hamden_data <- read_csv("C:/Users/ashle/OneDrive/Desktop/S&DS 4250/Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
+hamden_data = hamden_data %>% filter(Town_Name == "Hamden", Unit_Type == "Single Fam M01")
+
+d2009 <- read_csv("Hamden2009.csv")
+data_2009 = d2009 %>% dplyr::select(c('pid', 'appraisedvalue'))
+names(data_2009) <- c('PID', 'appraised_2009')
+hamden_data <- hamden_data %>% rename(Parcel_ID = PID.x)
+
+# outer join
+sale_data$Location <- paste(sale_data$`Property Number`, sale_data$`Street Name`)
+merged <- left_join(hamden_data, sale_data, by = "Location")
+merged <- left_join(hamden_data, data_2009, by = "PID")
+
+# coerce to numeric (strip $ and commas if present)
+merged <- merged %>%
+  mutate(
+    Assessed.Total = readr::parse_number(as.character(Assessed.Total)),
+    Sale.Price     = readr::parse_number(as.character(Sale.Price))
+  )%>%
+  filter(Sale.Price > 0)
+
+
+# compute ASR and Equalized Ratio
+merged <- merged %>%
+  mutate(
+    ASR = Assessed.Total / Sale.Price,
+    Equalized_Ratio = (Assessed.Total / 0.70) / Sale.Price
+  )
+
+model_data <- merged %>%
+  mutate(
+    Sale     = readr::parse_number(as.character(Sale.Price)),
+    Assessed.Total = readr::parse_number(as.character(Assessed.Total)),
+    Living.Area    = as.numeric(Living.Area),
+    Land.Acres     = as.numeric(Land.Acres),
+    Number.of.Bedroom = as.numeric(Number.of.Bedroom),
+    Number.of.Baths   = as.numeric(Number.of.Baths),
+    Number.of.Half.Baths = as.numeric(Number.of.Half.Baths)
+  )
+
+# add in centroid/location data
+centroids <- readRDS("centroids.no.geometry.rds")
+model_data <- model_data %>%
+  left_join(centroids, by = c("link" = "Link"))
+
+```
+
 ```{r}
 model_data = read_csv("data.csv")
 ```
