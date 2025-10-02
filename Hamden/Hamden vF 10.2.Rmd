@@ -1,14 +1,15 @@
 ---
-title: "Final-Hamden-assessed-value-fairness"
+title: "Final Hamden Assessed Value Fairness Report"
 author: "Lee-Ann Kao, Jake Todd, Ashley Yen"
 date: "2025-09-18"
 output: pdf_document
 ---
 
-```{r}
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
 # load libraries
 library(dplyr)
 library(readxl)
+library(rvest)
 library(ggplot2)
 library(tidyverse)
 library(corrplot)
@@ -29,87 +30,130 @@ In order to answer this question, we attempted to recreate the assessor valuatio
 [______ insert description of how we scraped, cleaned, and merged the data]
 
 THE PART BELOW IS NOT DONE! I have not added in the web scraping part, and currently the dataframe has 13k rows, but the one we were using only has 7k.
-```{r, eval=FALSE}
-# read in CT property and sales data
+```{r, echo=FALSE, eval=FALSE, warning=FALSE, message=FALSE}
+# read in sales data
 sale_data <- read_excel("sales_data.xlsx")
-sale_data = sale_data %>% filter(Description == 'Single Fam M01')
+sale_data = sale_data %>% 
+  filter(Description == 'Single Fam M01') %>%
+  rename(
+    Sale.Price.2024 = 'Sale Price',
+    Sale.Date.2024 = 'Sale Date'
+  )
 
-hamden_data <- read_csv("C:/Users/ashle/OneDrive/Desktop/S&DS 4250/Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
-hamden_data = hamden_data %>% filter(Town_Name == "Hamden", Unit_Type == "Single Fam M01")
+# read in CT property 
+hamden_data <- read_csv("Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
+hamden_data = hamden_data %>% 
+  filter(Town_Name == "Hamden", Unit_Type == "Single Fam M01")
+head(hamden_data)
 
+# read in Hamden html files
+for(i in 1:nrow(hamden_data)){
+  hamden_data$PID[i] <- str_split(hamden_data$link[i],"-")[[1]][2]
+}
+hamden_data$PID <- as.numeric(hamden_data$PID)
+
+hamden_data$Sale.Date <- NA
+hamden_data$Sale.Price <- NA
+
+hamden_data$PID <- as.numeric(hamden_data$PID)
+for(i in 1:nrow(hamden_data)){
+  temp_html <- read_html(paste0('Hamden_Sept2025/',hamden_data$PID[i],'.html'))
+  tables <- temp_html %>%
+    html_elements("table") %>%
+    html_table(fill = TRUE)
+  if (length(tables) >= 5) {
+    sale_table <- tables[[5]]
+    sale_table <- sale_table[!sale_table$X1 == "", ]
+    sale_table <- sale_table %>%
+      pivot_wider(names_from = X1, values_from = X2)
+    
+    if ("Sale Date" %in% names(sale_table)) {
+      hamden_data$Sale.Date[i] <- sale_table$`Sale Date`[1]
+    }
+    if ("Sale Price" %in% names(sale_table)) {
+      hamden_data$Sale.Price[i] <- sale_table$`Sale Price`[1]
+    }
+  }
+}
+
+hamden_data <- hamden_data %>%
+  dplyr::select(-'Sale Date', -'Sale Price')
+
+# read in 2009 data
 d2009 <- read_csv("Hamden2009.csv")
-data_2009 = d2009 %>% dplyr::select(c('pid', 'appraisedvalue'))
-names(data_2009) <- c('PID', 'appraised_2009')
-hamden_data <- hamden_data %>% rename(Parcel_ID = PID.x)
 
-# outer join
+# left join
 sale_data$Location <- paste(sale_data$`Property Number`, sale_data$`Street Name`)
 merged <- left_join(hamden_data, sale_data, by = "Location")
-merged <- left_join(hamden_data, data_2009, by = "PID")
 
-# coerce to numeric (strip $ and commas if present)
-merged <- merged %>%
-  mutate(
-    Assessed.Total = readr::parse_number(as.character(Assessed.Total)),
-    Sale.Price     = readr::parse_number(as.character(Sale.Price))
-  )%>%
-  filter(Sale.Price > 0)
-
-# edit variable types
-model_data <- merged %>%
-  mutate(
-    Sale     = readr::parse_number(as.character(Sale.Price)),
-    Assessed.Total = readr::parse_number(as.character(Assessed.Total)),
-    Living.Area    = as.numeric(Living.Area),
-    Land.Acres     = as.numeric(Land.Acres),
-    Number.of.Bedroom = as.numeric(Number.of.Bedroom),
-    Number.of.Baths   = as.numeric(Number.of.Baths),
-    Number.of.Half.Baths = as.numeric(Number.of.Half.Baths)
-  )
+colnames(merged) <- gsub(" ", ".", colnames(merged))
+head(merged)
 
 # add in centroid/location data
 centroids <- readRDS("centroids.no.geometry.rds")
-model_data <- model_data %>%
+model_data <- merged %>%
   left_join(centroids, by = c("link" = "Link"))
-
 ```
 
-```{r}
-model_data = read_csv("data.csv")
+```{r, echo=FALSE}
+other_model_data = read_csv("data.csv")
+
+head(model_data)
+nrow(model_data)
+head(other_model_data)
+nrow(other_model_data)
 ```
 
 # Assessed Value/Sale Price Ratio (ASR) Analysis
 
-First, we looked at the Assessed Value/Sale Price ratio (ASR) for homes sold in 2024 to understand if assessed value is considered "fair" in 2024. The histogram and scatterplot below show the distribution of ASR for homes sold in 2024. 
+First, we looked at the Assessed Value/Sale Price ratio (ASR) for homes sold in 2024 to understand if assessed value is considered "fair" in 2024. The histogram and scatterplot below show the distribution of ASR for homes sold in 2024, comparing with 2023 and 2024 assessed values.
 
-The median assessed value over sale price ratio is [_____], which is much lower than the statutory level of assessed value of 70% for fair market value in Connecticut. Even accounting for inflation between 2024 and 2023, we see that homes are being severely under-assessed in 2023.
+The median assessed value over sale price ratio for 2024 is [_____], which is slightly lower than the statutory level of assessed value of 70% for fair market value in Connecticut. Meanwhile, the median ASR for 2023 assessed values is [_____], which is much lower than the statutory level of assessed value of 70% for fair market value in Connecticut. Even accounting for inflation between 2024 and 2023, we see that homes are being severely under-assessed in 2023. The jump in assessed value is most likely because 2023 undervalued homes relative to sale price rather than 2024 overvaluing homes relative to sale price.
 
 From the Leaflet Analysis, we see that [____ insert summary of findings from leaflet].
 
-```{r}
-# compute ASR and Equalized Ratio
+```{r, echo=FALSE}
+# compute ASR and Equalized Ratio for 2024 sales
 model_data <- model_data %>%
   mutate(
-    ASR = "Current Year Assessment" / Sale.Price,
-    Equalized_Ratio = ("Current Year Assessment" / 0.70) / Sale.Price
+    ASR = Current.Year.Assessment / Sale.Price.2024,
+    ASR.2023 = Prior.Year.Assessment / Sale.Price.2024,
   )
 
 # Filter to homes sold in 2024
-df_2024 <- filter(model_data, !is.na(Sale_2024) & Sale_2024 > 0 & ASR < 2)
+df_2024 <- filter(model_data, !is.na(ASR) & ASR < 2)
 
 # median of data
 median(df_2024$ASR, na.rm = TRUE)
 
+# Scatterplot of Assessed Value (2024) vs Actual Sale Price (2024)
+ggplot(df_2024, aes(x = Sale.Price.2024, y = Current.Year.Assessment)) +
+  geom_point(color = "blue", alpha = 0.5) +
+  geom_abline(slope = 0.7, intercept = 0, linetype = "dashed") +
+  labs(title = "Assessed Value vs Actual Sale Price (2024)",
+       x = "Actual Sale Price",
+       y = "Assessed Value")
+
 # Scatterplot of Assessed Value (2023) vs Actual Sale Price (2024)
-ggplot(df_2024, aes(x = Sale_2024, y = Assessed.Total)) +
+ggplot(df_2024, aes(x = Sale.Price.2024, y = Prior.Year.Assessment)) +
   geom_point(color = "blue", alpha = 0.5) +
   geom_abline(slope = 0.7, intercept = 0, linetype = "dashed") +
   labs(title = "Assessed Value (2023) vs Actual Sale Price (2024)",
-       x = "Actual Sale Price (2024)",
-       y = "Assessed Value (2023)")
+       x = "Actual Sale Price",
+       y = "Assessed Value")
 
-# Histogram of ASR
+# Histogram of ASR 2024
 ggplot(df_2024, aes(x = ASR)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = 0.7, color = "red", linetype = "dashed") +
+  labs(
+    title = "Histogram of ASR for Homes Sold in 2024",
+    x = "Assessment-to-Sale Ratio (ASR)",
+    y = "Number of Homes"
+  )
+
+# Histogram of ASR 2023
+ggplot(df_2024, aes(x = ASR.2023)) +
   geom_histogram(bins = 30, fill = "steelblue", color = "white", alpha = 0.8) +
   geom_vline(xintercept = 0.7, color = "red", linetype = "dashed") +
   labs(
@@ -119,7 +163,7 @@ ggplot(df_2024, aes(x = ASR)) +
   )
 ```
 
-```{r}
+```{r, echo=FALSE}
 # Leaflet of ASRs of homes sold in 2024. 
 
 leaflet(df_2024) %>%
@@ -140,10 +184,10 @@ leaflet(df_2024) %>%
   )
 ```
 
-```{r}
+```{r, echo=FALSE}
 # Leaflet of Sales Prices of homes sold in 2024
 # --- 1) Numeric & finite values ---
-sp_raw <- suppressWarnings(as.numeric(df_2024$Sale_2024))
+sp_raw <- suppressWarnings(as.numeric(df_2024$Sale.Price.2024))
 finite <- is.finite(sp_raw)
 if (!any(finite)) stop("No finite SalePrice values.")
 
@@ -183,11 +227,11 @@ leaflet(df_2024) %>%
     lng = ~point.x, lat = ~point.y,
     radius = 5,
     stroke = TRUE, color = "#8c8c8c", weight = 0.6,
-    fill = TRUE, fillColor = ~pal_bin(as.numeric(Sale_2024)), fillOpacity = 0.85,
+    fill = TRUE, fillColor = ~pal_bin(as.numeric(Sale.Price.2024)), fillOpacity = 0.85,
     popup = ~paste0(
       Location.y, "<br>Sale Price = ",
-      ifelse(is.finite(as.numeric(Sale_2024)),
-             dollar(round(as.numeric(Sale_2024), -3)),
+      ifelse(is.finite(as.numeric(Sale.Price.2024)),
+             dollar(round(as.numeric(Sale.Price.2024), -3)),
              "NA")
     )
   ) %>%
@@ -208,15 +252,10 @@ Next we performed correlation analysis to identify which property features to co
 
 We also looked at scatterplots of all potential variables with Sale Price in order to see if variables meet the linear relationship assumption for linear regression. There appear to be linear relationships between Sale Price and [_____]. However, there may be nonlinear relationships between Sale Price and [_____]. In terms of potential transformations, we see that Sale Price is right-skewed and may benefit from a log transformation.
 
-```{r}
+```{r, echo=FALSE}
 # split 
-for(i in 1:nrow(model_data)){
-  model_data$Sale.Year[i] <- substr(model_data$Sale.Date[i], nchar(model_data$Sale.Date[i]) - 3, nchar(model_data$Sale.Date[i]))
-}
-model_data$Sale.Year <- as.numeric(model_data$Sale.Year)
-
-train_data = model_data[!is.na(model_data$`Sale_2024`), ]
-test_data = model_data[is.na(model_data$`Sale_2024`), ]
+train_data = model_data[!is.na(model_data$`Sale.Price.2024`), ]
+test_data = model_data[is.na(model_data$`Sale.Price.2024`), ]
 
 for(i in 1:nrow(train_data)){
   train_data$PID[i] <- str_split(train_data$link[i],"-")[[1]][2]
@@ -224,7 +263,7 @@ for(i in 1:nrow(train_data)){
 train_data$PID <- as.numeric(train_data$PID)
 
 # limit to potentially relevant variables
-train_model_data <- train_data[, c('Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale_2024', 'ayb', 'eyb')]
+train_model_data <- train_data[, c('Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale.Price.2024', 'ayb', 'eyb')]
 
 # make correlation matrix
 cor1 <- cor(train_model_data)
@@ -248,11 +287,11 @@ We then applied the final model to properties that did not sell in 2024 to predi
 
 Finally, the residual plots below show that the linear model assumptions are reasonably satisfied. The residuals appear to be normally distributed, homoskedastic, and there is no obvious pattern in the residuals vs fitted values plot.
 
-```{r}
+```{r, echo=FALSE}
 # stepwise regression using AIC
 set.seed(4250)
-m.full <- lm(log(Sale_2024) ~ ., data = train_model_data)
-m.null <- lm(log(Sale_2024) ~ 1, data = train_model_data)
+m.full <- lm(log(Sale.Price.2024) ~ ., data = train_model_data)
+m.null <- lm(log(Sale.Price.2024) ~ 1, data = train_model_data)
 m.select <- stepAIC(
   m.null,
   direction = "forward",
@@ -276,25 +315,25 @@ compareFolds(cv.select)
 # final model
 fit <- m.select
 pred_sale <- predict(fit, newdata = test_data) 
-test_data$Sale_2024 <- exp(pred_sale)
+test_data$Sale.Price.2024 <- exp(pred_sale)
 
 # linear model assumptions
 plot(fit)
 ```
 
-```{r}
+```{r, echo=FALSE}
 # make correlation matrix
-cor1 <- cor(train_data[, c('Sale_2024', 'Pre.Yr.Assessed.Total', 'Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Number.of.Half.Baths', 'ayb', 'eyb', 'appraised_2009')], use = "pairwise.complete.obs")
+cor1 <- cor(train_data[, c('Sale.Price.2024', 'Pre.Yr.Assessed.Total', 'Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Number.of.Half.Baths', 'ayb', 'eyb', 'appraised_2009')], use = "pairwise.complete.obs")
 
 corrplot.mixed(cor1, lower.col = "black", upper = "ellipse", tl.col = "black", number.cex = .7, tl.pos = "lt", tl.cex=.7, sig.level = .05)
 
 # limit to potentially relevant variables
-train_model_data <- train_data[, c('Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale_2024', 'ayb', 'eyb', 'appraised_2009')]
+train_model_data <- train_data[, c('Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale.Price.2024', 'ayb', 'eyb', 'appraised_2009')]
 train_model_data = train_model_data[!is.na(train_model_data$appraised_2009),]
 
 # perform best subsets regression
-full_model <- lm(log(Sale_2024) ~ ., data = train_model_data)
-null_model <- lm(log(Sale_2024) ~ 1, data = train_model_data)
+full_model <- lm(log(Sale.Price.2024) ~ ., data = train_model_data)
+null_model <- lm(log(Sale.Price.2024) ~ 1, data = train_model_data)
 n <- nrow(train_model_data)
 
 # stepwise regression using BIC
@@ -311,7 +350,7 @@ summary(stepwise_aic_model)
 # final model
 fit <- stepwise_aic_model
 pred_sale <- predict(fit, newdata = test_data) 
-test_data$Sale_2024 <- exp(pred_sale)
+test_data$Sale.Price.2024 <- exp(pred_sale)
 ```
 
 # Assessment of Fairness Given the Model
@@ -320,9 +359,9 @@ The plot of Predicted Price vs Assessed Value of properties shows Assessed Value
 
 In addition, we plotted the ASR for each property in Hamden on a map, using the property's latitude and longitude to plot. Each property is displayed as a point, with the color indicating the ASR value. Properties with high ASRs (over-assessed) are red, and those with low ASRs (under-assessed) are blue. This helps us determine whether location plays a role in fairness of value.
 
-```{r}
+```{r, echo=FALSE}
 # values
-ggplot(test_data, aes(x = Sale_2024)) +
+ggplot(test_data, aes(x = Sale.Price.2024)) +
   geom_point(aes(y = Sale.Price), color = "blue", alpha = 0.5) +
   geom_point(aes(y = Assessed.Total / 0.70), color = "red", alpha = 0.5) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
@@ -332,19 +371,19 @@ ggplot(test_data, aes(x = Sale_2024)) +
        caption = "Blue = Actual Sale, Red = Assessor (Equalized)")
 
 test_data$Appraised <- test_data$Assessed.Total / 0.70
-test_data$residual <- test_data$Sale_2024 - test_data$Appraised
+test_data$residual <- test_data$Sale.Price.2024 - test_data$Appraised
 test_data$residual_normalized <- test_data$residual/test_data$Appraised
 test_data$residual_normalized
 
-ggplot(data = train_data, aes(x = `Current Year Appraisal`, y = Sale_2024)) + geom_point() + geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red")
-ggplot(data = test_data, aes(x = Appraised, y = Sale_2024)) + geom_point() + geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red")
+ggplot(data = train_data, aes(x = `Current Year Appraisal`, y = Sale.Price.2024)) + geom_point() + geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red")
+ggplot(data = test_data, aes(x = Appraised, y = Sale.Price.2024)) + geom_point() + geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red")
 ```
 
 # Subsets Analysis
 
 [Insert analysis]
 
-```{r}
+```{r, echo=FALSE}
 leaflet(model_data) %>%
   addTiles() %>%
   addCircleMarkers(
@@ -364,10 +403,7 @@ leaflet(model_data) %>%
 ```
 
 
-```{r}
-library(leaflet)
-library(RColorBrewer)
-
+```{r, echo=FALSE}
 # --- 1) symmetric trim to remove outliers where sales price is NA/0---
 res <- test_data$residual
 m   <- quantile(abs(res), 0.95, na.rm = TRUE)
@@ -431,16 +467,13 @@ leaflet(test_data) %>%
     "bottomright",
     colors  = "#FFFFFF", labels = "0", opacity = 1, title = NULL
   )
-
-
-
 ```
 
 
-```{r}
+```{r, echo=FALSE}
 # Data prep: coerce to numeric & drop NAs
 df <- test_data
-df$SalePrice_num <- suppressWarnings(as.numeric(df$Sale_2024))
+df$SalePrice_num <- suppressWarnings(as.numeric(df$Sale.Price.2024))
 df$residual_num  <- suppressWarnings(as.numeric(df$residual))
 df2 <- subset(df, is.finite(SalePrice_num) & is.finite(residual_num))
 
@@ -462,7 +495,6 @@ p <- ggplot(df2, aes(x = SalePrice_num, y = residual_num)) +
   theme_minimal(base_size = 12)
 
 print(p)
-
 ```
 
 # Conclusion
