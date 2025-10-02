@@ -17,48 +17,39 @@ library(leaflet)
 library(RColorBrewer)
 library(scales)
 ```
-A Hamden homeowner saw a large assessment increase shortly after purchasing and wanted to know whether the new assessed value is fair. In order to answer this question, we attempted to recreate the assessor valuation process, by using recent sales to build a pricing model, then applying it to all properties. By comparing predictions to assessments, we determined whether the assessor's values align with our estimate of value.  
 
-# read in and join data
+# Introduction
+
+A Hamden homeowner saw a large assessment increase shortly after purchasing and wanted to know whether the new assessed value is fair. In order to answer this question, we attempted to recreate the assessor valuation process by using recent 2024 sales to build a sale pricing model, then applying it to all properties in an attempt to get the would-be 2024 sale price for all homes. By comparing our predicted 2024 sale price to the actual assessments, we determined whether the assessor's values align with our estimate of value and are therefore "fair." We define fair as [____ insert definition of fair].
+
+# Reading, Cleaning, and Merging the Data
+
+[______ insert description of how we scraped, cleaned, and merged the data]
 
 ```{r}
 model_data = read_csv("data.csv")
-head(model_data)
-names(model_data)
 ```
 
-The histogram below shows the distribution of ASR (Assessed Value/Sale Price ratio). 
+# Assessed Value/Sale Price Ratio (ASR) Analysis
 
-# look at data relationships
-```{r}
-# histogram of ASR
-head(model_data$ASR)
-str(model_data$ASR)
-summary(model_data$ASR)
-model_data <- model_data %>%
-  filter(ASR < 1)
+First, we looked at the Assessed Value/Sale Price ratio (ASR) for homes sold in 2024 to understand if assessed value is considered "fair" in 2024. The histogram and scatterplot below show the distribution of ASR for homes sold in 2024. 
 
-# median of data
-median(model_data$ASR, na.rm = TRUE)
-
-# plot from the correct dataframe
-ggplot(model_data, aes(x = ASR)) +
-  geom_histogram(binwidth = 0.05, fill = "steelblue", color = "white") +
-  geom_vline(xintercept = 0.70, color = "red", linetype = "dashed") +
-  labs(
-    title = "Hamden Assessment-to-Sale Ratio (ASR)",
-    x = "Assessment-to-Sale Ratio",
-    y = "Count"
-  )
-```
-
-The median assessed value over sale price ratio is 61%, which is lower than the statutory level of assessed value of 70% for fair market value in Connecticut. 
-
-Filtering to look at the ASR of only homes sold in 2024. 
+The median assessed value over sale price ratio is [_____], which is much lower than the statutory level of assessed value of 70% for fair market value in Connecticut. Even accounting for inflation between 2024 and 2023, we see that homes are being severely under-assessed in 2023.
 
 ```{r}
 # Filter to homes sold in 2024
-df_2024 <- subset(model_data, !is.na(Sale_2024) & Sale_2024 > 0)
+df_2024 <- filter(model_data, !is.na(Sale_2024) & Sale_2024 > 0 & ASR < 2)
+
+# median of data
+median(df_2024$ASR, na.rm = TRUE)
+
+# Scatterplot of Assessed Value (2023) vs Actual Sale Price (2024)
+ggplot(df_2024, aes(x = Sale_2024, y = Assessed.Total)) +
+  geom_point(color = "blue", alpha = 0.5) +
+  geom_abline(slope = 0.7, intercept = 0, linetype = "dashed") +
+  labs(title = "Assessed Value (2023) vs Actual Sale Price (2024)",
+       x = "Actual Sale Price (2024)",
+       y = "Assessed Value (2023)")
 
 # Histogram of ASR
 ggplot(df_2024, aes(x = ASR)) +
@@ -69,7 +60,6 @@ ggplot(df_2024, aes(x = ASR)) +
     x = "Assessment-to-Sale Ratio (ASR)",
     y = "Number of Homes"
   )
-
 ```
 Leaflet of ASRs of homes sold in 2024. 
 ```{r}
@@ -153,10 +143,18 @@ leaflet(df_2024) %>%
 
 ```
 
-Next, we built a predictive model using properties that actually sold in 2024. We then applied the model to properties that did not sell in 2024 in order to obtain an estimate of what those properties would have sold for in 2024. 
+# Variable Analysis
 
-# model training
+Next we performed correlation analysis to identify which property features to consider including in our model predicting sale price in 2024.
+
+We see that [____ insert] have the strongest correlations with Sale Price. However, there appear to be correlations between these potential predictor variables, and we therefore need to be careful of collinearity when building our model. For example, Living Area is correlated with [_____ insert].
+
+In terms of potential transformations, we see that Sale Price is right-skewed and may benefit from a log transformation.
+
+There appear to be linear relationships between Sale Price and [_____]. However, there may be nonlinear relationships between Sale Price and [_____].
+
 ```{r}
+# split 
 for(i in 1:nrow(model_data)){
   model_data$Sale.Year[i] <- substr(model_data$Sale.Date[i], nchar(model_data$Sale.Date[i]) - 3, nchar(model_data$Sale.Date[i]))
 }
@@ -170,10 +168,65 @@ for(i in 1:nrow(train_data)){
 }
 train_data$PID <- as.numeric(train_data$PID)
 
-```
-We then performed correlation analysis and stepwise regression to identify which property features are most predictive of sale price in 2024.
+# limit to potentially relevant variables
+train_model_data <- train_data[, c('Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale_2024', 'ayb', 'eyb')]
 
-# model selection
+# make correlation matrix
+cor1 <- cor(train_model_data)
+
+corrplot.mixed(cor1, lower.col = "black", upper = "ellipse", tl.col = "black", number.cex = .7, tl.pos = "lt", tl.cex=.7, sig.level = .05)
+
+# make scatterplot matrix
+library(psych)
+pairs.panels(train_model_data, 
+             method = "pearson",
+             hist.col = "#00AFBB",
+             density = TRUE
+             )
+```
+
+# Model Building
+
+Next, we built a predictive model using properties that actually sold in 2024. We then applied the model to properties that did not sell in 2024 in order to obtain an estimate of what those properties would have sold for in 2024. 
+
+We performed stepwise regression using AIC and 10-fold cross-validation to select the best model. The final model includes [____ insert] as predictors. Based on cross-validation, there is no sign of significant overfitting, as our full-sample RMSE ([_____]) is similar to the average cross-validated RMSE ([_____]).
+
+Finally, the residual plots below show that the linear model assumptions are reasonably satisfied. The residuals appear to be normally distributed, homoskedastic, and there is no obvious pattern in the residuals vs fitted values plot.
+
+```{r}
+# stepwise regression using AIC
+set.seed(4250)
+m.full <- lm(log(Sale_2024) ~ ., data = train_model_data)
+m.null <- lm(log(Sale_2024) ~ 1, data = train_model_data)
+m.select <- stepAIC(
+  m.null,
+  direction = "forward",
+  trace = FALSE,
+  scope = list(lower =  ~ 1, upper = formula(m.full))
+)
+summary(m.select)
+
+# 10-fold cross-validation for stepwise regression
+cv.select <- cv(
+  selectStepAIC,
+  data = train_model_data,
+  seed = 4250,
+  working.model = m.null,
+  direction = "forward",
+  scope = list(lower =  ~ 1, upper = formula(m.full))
+)
+summary(cv.select)
+compareFolds(cv.select)
+
+# final model
+fit <- m.select
+pred_sale <- predict(fit, newdata = test_data) 
+test_data$Sale_2024 <- exp(pred_sale)
+
+# linear model assumptions
+plot(fit)
+```
+
 ```{r}
 # make correlation matrix
 cor1 <- cor(train_data[, c('Sale_2024', 'Pre.Yr.Assessed.Total', 'Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Number.of.Half.Baths', 'ayb', 'eyb', 'appraised_2009')], use = "pairwise.complete.obs")
@@ -206,24 +259,13 @@ pred_sale <- predict(fit, newdata = test_data)
 test_data$Sale_2024 <- exp(pred_sale)
 ```
 
-The correlation plot includes the following variables: Sale Price, Previous Year Assessed Total, Land Acres, Living Area, Effective Area, Total Rooms, Number of Bedroom, Number of Baths, Number of Half Baths, ayb, eyb, and appraised 2009 value. All pairs of variables except Number of Baths and Number of Half Baths had positive or neutral correlations. Previous year assess total, appraised value in 2009, living area, and effective area had the highest correlations with Sale Price, while ayb and number of half baths had the lowest correlation with sale price.
+# Assessment of Fairness Given the Model
 
-Next, we used BIC-based stepwise selection and AIC-based stepwise selection to decide which predictors to use in our model. 
+The plot of Predicted Price vs Assessed Value of properties shows Assessed Value in red and Predicted Price in blue. The Assessed values are typically lower than both the model-predicted and actual sale prices, suggesting that Hamden homes are being undervalued overall. 
 
-BIC-based stepwise selection chose a model with 3 predictors: Appraised 2009 value, land acres, and number of bedrooms, yielding an  Adjusted R^2 of about 0.7549. While all coefficients are significant, land acres has a negative coefficient which does not make sense.
+In addition, we plotted the ASR for each property in Hamden on a map, using the property's latitude and longitude to plot. Each property is displayed as a point, with the color indicating the ASR value. Properties with high ASRs (over-assessed) are red, and those with low ASRs (under-assessed) are blue. This helps us determine whether location plays a role in fairness of value. 
 
-AIC-based stepwise selection chose a model with 4 predictors: Land acres, number of bedrooms, number of baths, and appraised value in 2009. This model resulted in an adjusted R^2 value of 0.7565. Like the BIC model, land acres has a negative coefficient which does not make sense. Furthermore, all predictors except number of baths is significant.
-
-We chose the AIC-based model as our final model, as it had a slightly higher Adjusted R^2 and included more predictors.
-
-Finally, we compared each property's assessed value with the predicted value from our model. 
-
-# plot
 ```{r}
-# residuals and assumptions
-qqnorm(scale(resid(fit)))
-abline(0,1)
-
 # values
 ggplot(test_data, aes(x = Sale_2024)) +
   geom_point(aes(y = Sale.Price), color = "blue", alpha = 0.5) +
@@ -243,12 +285,7 @@ ggplot(data = train_data, aes(x = `Current Year Appraisal`, y = Sale_2024)) + ge
 ggplot(data = test_data, aes(x = Appraised, y = Sale_2024)) + geom_point() + geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red")
 ```
 
-
-The plot of Predicted Price vs Assessed Value of properties shows Assessed Value in red and Predicted Price in blue. The Assessed values are typically lower than both the model-predicted and actual sale prices, suggesting that Hamden homes are being undervalued overall. 
-
-In addition, we plotted the ASR for each property in Hamden on a map, using the property's latitude and longitude to plot. Each property is displayed as a point, with the color indicating the ASR value. Properties with high ASRs (over-assessed) are red, and those with low ASRs (under-assessed) are blue. This helps us determine whether location plays a role in fairness of value. 
-
-# map
+# Subsets Analysis
 
 ```{r}
 leaflet(model_data) %>%
@@ -371,6 +408,7 @@ print(p)
 
 ```
 
+# Conclusion
 Our analysis shows that homes are generally being undervalued relative to their sales prices. From a homeowner's perspective, this is variable as it yields them a lower property tax bill. 
 
 1. just look at properties sold in 2024 - create leaflet showing the ASRs and which are over/under valued
