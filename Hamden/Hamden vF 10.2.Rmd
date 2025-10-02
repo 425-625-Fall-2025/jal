@@ -17,6 +17,7 @@ library(MASS)
 library(leaflet)
 library(RColorBrewer)
 library(scales)
+library(cv)
 ```
 
 # Introduction
@@ -28,9 +29,7 @@ In order to answer this question, we attempted to recreate the assessor valuatio
 # Reading, Cleaning, and Merging the Data
 
 [______ insert description of how we scraped, cleaned, and merged the data]
-
-THE PART BELOW IS NOT DONE! I have not added in the web scraping part, and currently the dataframe has 13k rows, but the one we were using only has 7k.
-```{r, echo=FALSE, eval=FALSE, warning=FALSE, message=FALSE}
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
 # read in sales data
 sale_data <- read_excel("sales_data.xlsx")
 sale_data = sale_data %>% 
@@ -93,15 +92,6 @@ head(merged)
 centroids <- readRDS("centroids.no.geometry.rds")
 model_data <- merged %>%
   left_join(centroids, by = c("link" = "Link"))
-```
-
-```{r, echo=FALSE}
-other_model_data = read_csv("data.csv")
-
-head(model_data)
-nrow(model_data)
-head(other_model_data)
-nrow(other_model_data)
 ```
 
 # Assessed Value/Sale Price Ratio (ASR) Analysis
@@ -321,38 +311,6 @@ test_data$Sale.Price.2024 <- exp(pred_sale)
 plot(fit)
 ```
 
-```{r, echo=FALSE}
-# make correlation matrix
-cor1 <- cor(train_data[, c('Sale.Price.2024', 'Pre.Yr.Assessed.Total', 'Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Number.of.Half.Baths', 'ayb', 'eyb', 'appraised_2009')], use = "pairwise.complete.obs")
-
-corrplot.mixed(cor1, lower.col = "black", upper = "ellipse", tl.col = "black", number.cex = .7, tl.pos = "lt", tl.cex=.7, sig.level = .05)
-
-# limit to potentially relevant variables
-train_model_data <- train_data[, c('Land.Acres', 'Living.Area', 'Effective.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale.Price.2024', 'ayb', 'eyb', 'appraised_2009')]
-train_model_data = train_model_data[!is.na(train_model_data$appraised_2009),]
-
-# perform best subsets regression
-full_model <- lm(log(Sale.Price.2024) ~ ., data = train_model_data)
-null_model <- lm(log(Sale.Price.2024) ~ 1, data = train_model_data)
-n <- nrow(train_model_data)
-
-# stepwise regression using BIC
-stepwise_bic_model <- stepAIC(null_model,
-                              direction = "both",
-                              scope = list(upper = full_model, lower = null_model),
-                              k = log(n))
-summary(stepwise_bic_model)
-
-# stepwise regression AIC
-stepwise_aic_model <- stepAIC(full_model, direction = "both", trace = FALSE)
-summary(stepwise_aic_model)
-
-# final model
-fit <- stepwise_aic_model
-pred_sale <- predict(fit, newdata = test_data) 
-test_data$Sale.Price.2024 <- exp(pred_sale)
-```
-
 # Assessment of Fairness Given the Model
  
 The plot of Predicted Price vs Assessed Value of properties shows Assessed Value in red and Predicted Price in blue. The Assessed values are typically lower than both the model-predicted and actual sale prices, suggesting that Hamden homes are being undervalued overall. 
@@ -362,7 +320,7 @@ In addition, we plotted the ASR for each property in Hamden on a map, using the 
 ```{r, echo=FALSE}
 # values
 ggplot(test_data, aes(x = Sale.Price.2024)) +
-  geom_point(aes(y = Sale.Price), color = "blue", alpha = 0.5) +
+  geom_point(aes(y = parse_number(as.character(Sale.Price))), color = "blue", alpha = 0.5) +
   geom_point(aes(y = Assessed.Total / 0.70), color = "red", alpha = 0.5) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
   labs(title = "Predicted vs Actual vs Assessed Market Values",
@@ -375,7 +333,7 @@ test_data$residual <- test_data$Sale.Price.2024 - test_data$Appraised
 test_data$residual_normalized <- test_data$residual/test_data$Appraised
 test_data$residual_normalized
 
-ggplot(data = train_data, aes(x = `Current Year Appraisal`, y = Sale.Price.2024)) + geom_point() + geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red")
+ggplot(data = train_data, aes(x = Assessed.Total, y = Sale.Price.2024)) + geom_point() + geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red")
 ggplot(data = test_data, aes(x = Appraised, y = Sale.Price.2024)) + geom_point() + geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red")
 ```
 
@@ -498,12 +456,9 @@ print(p)
 ```
 
 # Conclusion
-Our analysis shows that homes are generally being undervalued relative to their sales prices. From a homeowner's perspective, this is variable as it yields them a lower property tax bill. 
 
-1. just look at properties sold in 2024 - create leaflet showing the ASRs and which are over/under valued
-2. look at sales prices and see if there is a trend in the subsets
+Our analysis shows that assessed value in 2023 is significantly lower than sale price, indicating that homes are being undervalued overall in 2023. This could account for the apparent jump in assessed value that our homeowner notcied. The model we built using 2024 sales data suggests that the assessor's 2023 values are much lower than our estimates of 2024 market value, further supporting the idea that assessed values may not be fair (although opposite what the homeowner suspected).
 
-- percent difference
+Through our model, we found that certain property features, such as [____ insert], are strong predictors of sale price and are likely included in the assessor's model. The residual analysis indicates that the model assumptions are reasonably satisfied, and there is no significant overfitting based on cross-validation results. However, there are limitations to our analysis. Our model is based on the assumption that the assessor uses a similar set of variables and a linear regression approach, which may not be the case. 
 
-- plot scatterplot of residuals vs something else
-
+Additionally, this model does not account for all possible factors that could influence property values, such as neighborhood effects or recent renovations. This is apparent in the map analysis where we see clusters of over-assessed and under-assessed homes, suggesting that location may play a role in fairness of value.
