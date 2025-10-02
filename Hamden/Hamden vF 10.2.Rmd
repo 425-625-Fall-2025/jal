@@ -55,14 +55,7 @@ merged <- merged %>%
   )%>%
   filter(Sale.Price > 0)
 
-
-# compute ASR and Equalized Ratio
-merged <- merged %>%
-  mutate(
-    ASR = Assessed.Total / Sale.Price,
-    Equalized_Ratio = (Assessed.Total / 0.70) / Sale.Price
-  )
-
+# edit variable types
 model_data <- merged %>%
   mutate(
     Sale     = readr::parse_number(as.character(Sale.Price)),
@@ -94,6 +87,13 @@ The median assessed value over sale price ratio is [_____], which is much lower 
 From the Leaflet Analysis, we see that [____ insert summary of findings from leaflet].
 
 ```{r}
+# compute ASR and Equalized Ratio
+model_data <- model_data %>%
+  mutate(
+    ASR = "Current Year Assessment" / Sale.Price,
+    Equalized_Ratio = ("Current Year Assessment" / 0.70) / Sale.Price
+  )
+
 # Filter to homes sold in 2024
 df_2024 <- filter(model_data, !is.na(Sale_2024) & Sale_2024 > 0 & ASR < 2)
 
