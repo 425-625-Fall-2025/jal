@@ -129,9 +129,9 @@ The correlation plot includes the following variables: Previous Year Assessed To
 
 Next, we used BIC-based stepwise selection and AIC-based stepwise selection to decide which predictors to use in our model. 
 
-AIC-based stepwise selection chose a model with 3 predictors: Sale Price, eyb, and Total Rooms, yielding an AIC = -1955.5 and R^2 of about 0.90. Sale Price had the lowest p value, and eyb and Total Rooms also had positive coefficients and significant p values. 
+BIC-based stepwise selection chose a model with 3 predictors: Sale Price, eyb, and Total Rooms, yielding an  R^2 of about 0.90. Sale Price had the lowest p value, and eyb and Total Rooms also had positive coefficients and significant p values. 
 
-BIC-based stepwise selection chose a model with 4 predictors: Land Acres, Effective Area, Total Rooms, and Sale Year. All coefficients except Number of Bedrooms 
+AIC-based stepwise selection chose a model with 6 predictors: Effective Area, Total Rooms, Number of Bedrooms, Sale Price, ayb, and eyb. All coefficients except Number of Bedrooms are positive, and the R^2 is about 
 
 Next, we built a predictive model using properties that actually sold in 2024. We fit a regression model using Land Acres, Number of Baths, Number of Bedrooms, and eyb. Below is the model that we fit. 
 

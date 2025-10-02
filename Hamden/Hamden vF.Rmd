@@ -226,10 +226,45 @@ head(hamden_geo)
 # Example with left join (keep all rows from hamden_geo)
 hamden_joined <- test_data %>%
   left_join(centroids, by = c("link" = "Link"))
+hamden_joined_24 <- train_data %>%
+  left_join(centroids, by = c("link" = "Link"))
 
 # Check result
 hamden_joined
 ```
+
+```{r}
+ggplot(hamden_joined_24, aes(x = Assessed.Total / Sale.Price)) +
+  geom_histogram(binwidth = 0.05, fill = "steelblue", color = "white") +
+  geom_vline(xintercept = 0.70, color = "red", linetype = "dashed") +
+  labs(
+    title = "Hamden Assessment-to-Sale Ratio (ASR)",
+    x = "Assessment-to-Sale Ratio",
+    y = "Count"
+  )
+
+hamden_joined_24
+```
+
+```{r}
+leaflet(hamden_joined_24) %>%
+  addTiles() %>%  # adds OpenStreetMap background
+  addCircleMarkers(
+    lng = ~point.x, lat = ~point.y,
+    radius = 5,
+    color = ~colorNumeric(palette = c("blue","white","red"), domain = hamden_joined_24$ASR)(ASR),
+    fillOpacity = 0.7,
+    popup = ~paste0(Location.y, "<br>ASR = ", round(ASR, 2))
+  ) %>%
+  addLegend(
+    "bottomright", 
+    pal = colorNumeric(c("blue","white","red"), hamden_joined_24$ASR),
+    values = ~ASR,
+    title = "ASR",
+    opacity = 1
+  )
+```
+
 
 ```{r}
 leaflet(hamden_joined) %>%
@@ -252,34 +287,186 @@ leaflet(hamden_joined) %>%
 
 ```{r}
 library(leaflet)
+library(RColorBrewer)
 
-# 1) robust symmetric domain around 0 using 95th pct of |residual|
-r <- abs(hamden_joined$residual)
-m <- quantile(r, 0.95, na.rm = TRUE)   # try 0.90–0.98 if needed
+# --- 1) symmetric trim to remove outliers where sales price is NA/0---
+res <- hamden_joined$residual
+m   <- quantile(abs(res), 0.95, na.rm = TRUE)
 dom <- c(-m, m)
 
-# 2) palette using trimmed domain (values outside get clipped to ends)
-pal <- colorNumeric(
-  palette = c("blue","white","red"),
-  domain  = dom,
+res_trim <- pmin(pmax(res, dom[1]), dom[2])
+
+# --- 2) Build quantile breaks to help with color scale ---
+neg_vals <- res_trim[res_trim < 0]
+pos_vals <- res_trim[res_trim > 0]
+
+neg_breaks <- if (length(neg_vals)) quantile(neg_vals, probs = c(0, .25, .5, .75, 1), na.rm = TRUE) else c(-1e-9, 0)
+pos_breaks <- if (length(pos_vals)) quantile(pos_vals, probs = c(0, .3, .6, .8, .9, .97, 1), na.rm = TRUE) else c(0, 1e-9)
+
+# Ensure 0 is in the break set exactly once
+breaks <- sort(unique(c(neg_breaks, 0, pos_breaks)))
+
+# --- 3) Palettes per side (multi-hue for positives) ---
+idx0        <- which(breaks == 0)
+n_neg_bins  <- idx0 - 1
+n_pos_bins  <- (length(breaks) - 1) - n_neg_bins
+
+cols_neg <- if (n_neg_bins > 0) rev(brewer.pal(max(3, n_neg_bins), "Blues"))[seq_len(n_neg_bins)] else character(0)
+cols_pos <- if (n_pos_bins > 0)      brewer.pal(max(3, n_pos_bins), "YlOrRd")[seq_len(n_pos_bins)] else character(0)
+
+pal_bin <- colorBin(
+  palette  = c(cols_neg, cols_pos),
+  bins     = breaks,
+  right    = TRUE,
   na.color = "transparent"
 )
+
+# --- 4) Compute colors ---
+cols <- pal_bin(res_trim)             # colors for trimmed values
+cols[is.na(res)]      <- NA           # keep NAs transparent
+cols[!is.na(res) & res == 0] <- "#FFFFFF" 
+
+# --- 5) Plot ---
+leaflet(hamden_joined) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~point.x, lat = ~point.y,
+    radius = 5,
+    stroke = TRUE, color = "#999999", weight = 0.5,
+    fill = TRUE, fillColor = ~cols, fillOpacity = 0.8,
+    popup = ~paste0(Location.y, "<br>residual = ", round(residual, 2))
+  ) %>%
+  addLegend(
+  position = "bottomright",
+  pal      = pal_bin,
+  values   = res_trim,
+  title    = "Residual (trimmed ±95th pct, quantile bins)",
+  opacity  = 1,
+  labFormat = labelFormat(
+    transform = function(x) round(x, -3),          # round to nearest 1000
+    big.mark  = ",",                               # add commas
+    digits    = 0                                  # no decimals
+  )
+  ) %>%
+  addLegend(
+    "bottomright",
+    colors  = "#FFFFFF", labels = "0", opacity = 1, title = NULL
+  )
+
+
+
+```
+
+```{r}
+library(leaflet)
+library(RColorBrewer)
+library(scales)
+
+# --- 1) Numeric & finite values ---
+sp_raw <- suppressWarnings(as.numeric(hamden_joined$Sale_2024))
+finite <- is.finite(sp_raw)
+if (!any(finite)) stop("No finite SalePrice values.")
+
+sp <- sp_raw[finite]
+
+# --- 2) Quantile bins
+n_bins <- 7
+probs  <- seq(0, 1, length.out = n_bins + 1)
+bins   <- as.numeric(quantile(sp, probs = probs, na.rm = TRUE))
+bins   <- sort(unique(bins))                  # drop duplicates from ties
+if (length(bins) < 2) bins <- range(sp)       # fallback if everything is equal
+
+n_palette <- max(3, min(9, length(bins) - 1))
+pal_vec   <- brewer.pal(n_palette, "YlOrRd")
+
+# If our bins exceed palette size (rare after unique), interpolate colors
+if ((length(bins) - 1) != length(pal_vec)) {
+  pal_vec <- colorRampPalette(pal_vec)(length(bins) - 1)
+}
+
+# --- 3) Color function over bins ---
+pal_bin <- colorBin(
+  palette  = pal_vec,
+  bins     = bins,
+  domain   = sp_raw,          # domain can include NAs; colorBin only uses bins
+  right    = TRUE,
+  na.color = "transparent"
+)
+
+# --- 4) Legend labels as ranges (rounded to nearest thousand, with commas) ---
+fmt_k <- function(x) paste0("$", prettyNum(round(x, -3), big.mark = ","))
+lab_ranges <- paste0(fmt_k(bins[-length(bins)]), " – ", fmt_k(bins[-1]))
 
 leaflet(hamden_joined) %>%
   addTiles() %>%
   addCircleMarkers(
     lng = ~point.x, lat = ~point.y,
-    radius = 5, stroke = TRUE, color = "#333", weight = 0.5,
-    fill = TRUE, fillColor = ~pal(residual), fillOpacity = 0.7,
-    popup = ~paste0(Location.y, "<br>residual = ", round(residual, 2))
+    radius = 5,
+    stroke = TRUE, color = "#8c8c8c", weight = 0.6,
+    fill = TRUE, fillColor = ~pal_bin(as.numeric(Sale_2024)), fillOpacity = 0.85,
+    popup = ~paste0(
+      Location.y, "<br>Sale Price = ",
+      ifelse(is.finite(as.numeric(Sale_2024)),
+             dollar(round(as.numeric(Sale_2024), -3)),
+             "NA")
+    )
   ) %>%
-  addLegend("bottomright", pal = pal, values = dom,  # use dom, not ~residual
-            title = "residual (trimmed ±95th pct)", opacity = 1)
+  # Use manual legend so we can show explicit ranges per bin
+  addLegend(
+    position = "bottomright",
+    colors   = pal_vec,
+    labels   = lab_ranges,
+    title    = "Sale Price (quantile bins)",
+    opacity  = 1
+  )
+
+```
+
+```{r}
+
+
+```
+
+```{r}
+library(ggplot2)
+library(scales)
+
+# Data prep: coerce to numeric & drop NAs
+df <- hamden_joined
+df$SalePrice_num <- suppressWarnings(as.numeric(df$Sale_2024))
+df$residual_num  <- suppressWarnings(as.numeric(df$residual))
+df2 <- subset(df, is.finite(SalePrice_num) & is.finite(residual_num))
+
+# Correlation stats
+ct <- cor.test(df2$SalePrice_num, df2$residual_num)
+ann_txt <- sprintf("Pearson r = %.3f\np = %.3g\nn = %d", ct$estimate, ct$p.value, nrow(df2))
+
+# Scatter with linear fit
+p <- ggplot(df2, aes(x = SalePrice_num, y = residual_num)) +
+  geom_point(alpha = 0.35, size = 1.6) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 0.9, color = "firebrick") +
+  annotate("text", x = Inf, y = Inf, label = ann_txt, hjust = 1.02, vjust = 1.1, size = 3.6) +
+  scale_x_continuous(labels = label_dollar(accuracy = 1)) +
+  labs(
+    x = "Sale Price",
+    y = "Residual",
+    title = "Residuals vs. Sale Price",
+    subtitle = "Positive slope and Pearson r indicate higher residuals with higher sale prices"
+  ) +
+  theme_minimal(base_size = 12)
+
+print(p)
 
 ```
 
 Our analysis shows that homes are generally being undervalued relative to their sales prices. From a homeowner's perspective, this is variable as it yields them a lower property tax bill. 
 
+1. just look at properties sold in 2024 - create leaflet showing the ASRs and which are over/under valued
+2. look at sales prices and see if there is a trend in the subsets
+
+- percent difference
+
+- plot scatterpllot of residuals vs something else
 ```{r}
 library(sf); library(dplyr)
 
