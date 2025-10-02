@@ -15,38 +15,34 @@ library(tidyverse)
 ```
 
 ```{r}
-data1 <- read.csv("Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
 sale_data <- read_excel("sales_data.xlsx")
-```
-```{r}
-data_hamden <- data1 %>% filter(Town_Name == 'Hamden')
+hamden_data <- read_csv("hamden_data_complete.csv")
 ```
 assessed = 0.7 * appraised
 
 ```{r}
 sale_data = sale_data %>% filter(Description == 'Single Fam M01')
-data_hamden = data_hamden %>% filter(State.Use.Description == 'Single Fam M01')
 ```
 
 ```{r}
-for(i in 1:nrow(data_hamden)){
-  data_hamden$PID[i] <- str_split(data_hamden$link[i],"-")[[1]][2]
+for(i in 1:nrow(hamden_data)){
+  hamden_data$PID[i] <- str_split(hamden_data$link[i],"-")[[1]][2]
 }
-data_hamden$PID <- as.numeric(data_hamden$PID)
+hamden_data$PID <- as.numeric(hamden_data$PID)
 ```
 ```{r}
 library(rvest)
 
-for(i in 1:nrow(data_hamden)){
-  temp_html <- read_html(paste0('/Users/jaketodd/Downloads/Hamden_Sept2025/',data_hamden$PID[i],'.html'))
+for(i in 1:nrow(hamden_data)){
+  temp_html <- read_html(paste0('/Users/ashle/Downloads/Hamden_Sept2025/',hamden_data$PID[i],'.html'))
   tables <- temp_html %>% 
     html_elements("table") %>%   
     html_table(fill = TRUE)
   sale_table <- tables[[5]]
   sale_table <- sale_table[!sale_table$X1 == "", ] 
   sale_table = sale_table %>% pivot_wider(names_from = X1, values_from = X2)
-  data_hamden$Sale.Date[i] <- sale_table$`Sale Date`[1]
-  data_hamden$Sale.Price[i] <- sale_table$`Sale Price`[1]
+  hamden_data$Sale.Date[i] <- sale_table$`Sale Date`[1]
+  hamden_data$Sale.Price[i] <- sale_table$`Sale Price`[1]
 }
 ```
 
@@ -54,6 +50,7 @@ for(i in 1:nrow(data_hamden)){
 ```{r}
 diff_pct <- (sale_data$`Current Year Appraisal` - sale_data$`Sale Price`)/sale_data$`Sale Price`
 mean(diff_pct)
+
 ```
 log transform -- coefficient on year
 
