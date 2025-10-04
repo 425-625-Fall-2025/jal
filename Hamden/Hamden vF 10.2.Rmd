@@ -40,7 +40,7 @@ sale_data = sale_data %>%
   )
 
 # read in CT property 
-hamden_data <- read_csv("C:/Users/ashle/OneDrive/Desktop/S&DS 4250/Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
+hamden_data <- read_csv("Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
 hamden_data = hamden_data %>% 
   filter(Town_Name == "Hamden", Unit_Type == "Single Fam M01")
 head(hamden_data)
@@ -92,6 +92,9 @@ head(merged)
 centroids <- readRDS("centroids.no.geometry.rds")
 model_data <- merged %>%
   left_join(centroids, by = c("link" = "Link"))
+
+# write csv
+write.csv(model_data, "model_data.csv", row.names = FALSE)
 ```
 
 # Assessed Value/Sale Price Ratio (ASR) Analysis
@@ -103,6 +106,9 @@ The median assessed value over sale price ratio for 2024 is [_____], which is sl
 From the Leaflet Analysis, we see that [____ insert summary of findings from leaflet].
 
 ```{r, echo=FALSE}
+# read csv
+model_data <- read.csv("model_data.csv")
+
 # compute ASR and Equalized Ratio for 2024 sales
 model_data <- model_data %>%
   mutate(
