@@ -241,7 +241,7 @@ leaflet(hamden_joined) %>%
   addTiles() %>%  # adds OpenStreetMap background
   addCircleMarkers(
     lng = ~point.x, lat = ~point.y,
-    radius = 5,
+    radius = 3,
     color = ~colorNumeric(palette = c("blue","white","red"), domain = hamden_joined$ASR)(ASR),
     fillOpacity = 0.7,
     popup = ~paste0(Location.y, "<br>ASR = ", round(ASR, 2))

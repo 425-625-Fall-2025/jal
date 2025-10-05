@@ -103,7 +103,7 @@ First, we looked at the Assessed Value/Sale Price ratio (ASR) for homes sold in 
 
 The median assessed value over sale price ratio for 2024 is [_____], which is slightly lower than the statutory level of assessed value of 70% for fair market value in Connecticut. Meanwhile, the median ASR for 2023 assessed values is [_____], which is much lower than the statutory level of assessed value of 70% for fair market value in Connecticut. Even accounting for inflation between 2024 and 2023, we see that homes are being severely under-assessed in 2023. The jump in assessed value is most likely because 2023 undervalued homes relative to sale price rather than 2024 overvaluing homes relative to sale price.
 
-From the Leaflet Analysis, we see that [____ insert summary of findings from leaflet].
+From the Leaflet Analysis, we see that almost all ASRs for homes sold in 2024 are below .7. The lowest ASRs are in the Northeast part of Hamden, while the highest ASRs are in the Southeast region. There seems to be more variability in ASR in Southern Hamden, especially compared to the Northwest region, which is predominantly homes that have ASRs of .7 and are most accurately assessed. The second Leaflet plots the 2024 Sales Price of homes
 
 ```{r, echo=FALSE}
 # read csv
@@ -153,7 +153,7 @@ ggplot(df_2024, aes(x = ASR.2023)) +
   geom_histogram(bins = 30, fill = "steelblue", color = "white", alpha = 0.8) +
   geom_vline(xintercept = 0.7, color = "red", linetype = "dashed") +
   labs(
-    title = "Histogram of ASR for Homes Sold in 2024",
+    title = "Histogram of 2023 ASR for Homes Sold in 2024",
     x = "Assessment-to-Sale Ratio (ASR)",
     y = "Number of Homes"
   )
@@ -232,12 +232,11 @@ leaflet(df_2024) %>%
              "NA")
     )
   ) %>%
-  # Use manual legend to show explicit ranges per bin
   addLegend(
     position = "bottomright",
     colors   = pal_vec,
     labels   = lab_ranges,
-    title    = "Sale Price (quantile bins)",
+    title    = "Sale Price",
     opacity  = 1
   )
 
@@ -322,8 +321,6 @@ plot(fit)
  
 The plot of Predicted Price vs Assessed Value of properties shows Assessed Value in red and Predicted Price in blue. The Assessed values are typically lower than both the model-predicted and actual sale prices, suggesting that Hamden homes are being undervalued overall. 
 
-In addition, we plotted the ASR for each property in Hamden on a map, using the property's latitude and longitude to plot. Each property is displayed as a point, with the color indicating the ASR value. Properties with high ASRs (over-assessed) are red, and those with low ASRs (under-assessed) are blue. This helps us determine whether location plays a role in fairness of value.
-
 ```{r, echo=FALSE}
 # values
 ggplot(test_data, aes(x = Sale.Price.2024)) +
@@ -342,29 +339,82 @@ test_data$residual_normalized
 
 ggplot(data = train_data, aes(x = Assessed.Total, y = Sale.Price.2024)) + geom_point() + geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red")
 ggplot(data = test_data, aes(x = Appraised, y = Sale.Price.2024)) + geom_point() + geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red")
+
 ```
 
 # Subsets Analysis
 
-[Insert analysis]
+The analysis below uses the properties that did not sell in 2024, and therefore we do not have actual sale prices to compare to assessed values. However, we can still analyze the ASR distribution and residuals from our model to assess fairness of assessed values.
+
+
+From the boxplot, we see that median ASR, using the most recent assessed value for all homes and the 2024 sales price that our model predicted, is less than .5, which is well below the standard of .7. There are several properties with ASRs above 1.0, meaning that either our sales price model is  underestimating the value of some homes, or the assessed value is overestimating. Because homes of higher sales price seem to have higher residuals, we also calculated normalized residual, which is residual divided by the appraised value. 
+
+We plotted the ASR for each property in Hamden on a map, using the property's latitude and longitude to plot. Each property is displayed as a point, with the color indicating the ASR value. Properties with high ASRs (over-assessed) are red, and those with low ASRs (under-assessed) are blue. This helps us determine whether location plays a role in fairness of value. 
+
+The Leaflet plot shows that there is no clear geographic trend for these higher ASRs, although several seem to be in the Northwest region of Hamden. Overall, ASR is well below .7 and fairly consistently blue across the city. 
+
+The following Leaflet plots normalized residuals. There is a clear region of large, positive residuals in the bottom center of Hamden. There also seems to be a cluster of negative residuals in the Northwest region, which is where more expensive homes are. This area also had higher ASRs. We think that our model may be underestimating sales price for more expensive homes. 
+
+```{r}
+# boxplot for ASR of Test Data
+boxplot(
+  test_data$ASR,
+  main = "Boxplot of Assessment-to-Sale Ratio (ASR) for Test Data",
+  ylab = "ASR (Assessed Value / Sale Price)",
+  col = "lightblue",
+  border = "darkblue",
+  notch = TRUE
+)
+
+# Add a reference line at 0.7 (the target)
+abline(h = 0.7, col = "red", lwd = 2, lty = 2)
+
+plot(
+  test_data$Sale.Price.2024, test_data$residual,
+  main = "Residuals vs Sale Price (2024)",
+  xlab = "Sale Price (2024, $)",
+  ylab = "Residual ($)",
+  pch = 19,
+  col = rgb(0.2, 0.4, 0.8, 0.5)
+)
+```
 
 ```{r, echo=FALSE}
 #Leaflet of ASRs for testing data
-leaflet(model_data) %>%
+test_data <- test_data %>%
+  mutate(ASR = Assessed.Total / Sale.Price.2024) %>%
+  filter(ASR <= 2, is.finite(ASR))
+
+asr_min <- min(test_data$ASR, na.rm = TRUE)
+asr_max <- max(test_data$ASR, na.rm = TRUE)
+center  <- 0.7
+domain_asr <- c(
+  min(asr_min, center - (asr_max - center)), 
+  max(asr_max, center + (center - asr_min))
+)
+
+pal_asr <- colorNumeric(
+  palette = c("blue", "white", "red"),
+  domain  = domain_asr,
+  na.color = "transparent"
+)
+leaflet(test_data) %>%
   addTiles() %>%
   addCircleMarkers(
     lng = ~point.x, lat = ~point.y,
     radius = 5,
-    color = ~colorNumeric(palette = c("blue","white","red"), domain = model_data$ASR)(ASR),
-    fillOpacity = 0.7,
+    stroke = TRUE, color = "#888888", weight = 0.5,
+    fillOpacity = 0.8,
+    fillColor = ~pal_asr(ASR),
     popup = ~paste0(Location.y, "<br>ASR = ", round(ASR, 2))
   ) %>%
   addLegend(
-    "bottomright", 
-    pal = colorNumeric(c("blue","white","red"), model_data$ASR),
+    "bottomright",
+    pal = pal_asr,
     values = ~ASR,
-    title = "ASR",
-    opacity = 1
+    title = "Assessment-to-Sale Ratio (ASR)",
+    opacity = 1,
+    labFormat = labelFormat(digits = 2)
   )
 ```
 
@@ -372,7 +422,7 @@ leaflet(model_data) %>%
 ```{r, echo=FALSE}
 # Leaflet of residuals (test data)
 # symmetric trim to remove outliers where sales price is NA/0
-res <- test_data$residual
+res <- test_data$residual_normalized
 m   <- quantile(abs(res), 0.95, na.rm = TRUE)
 dom <- c(-m, m)
 
@@ -415,24 +465,32 @@ leaflet(test_data) %>%
     lng = ~point.x, lat = ~point.y,
     radius = 5,
     stroke = TRUE, color = "#999999", weight = 0.5,
-    fill = TRUE, fillColor = ~cols, fillOpacity = 0.8,
-    popup = ~paste0(Location.y, "<br>residual = ", round(residual, 2))
+    fill = TRUE, fillColor = cols,  # <-- no tilde
+    fillOpacity = 0.8,
+    popup = ~paste0(
+      Location.y, "<br>Normalized Residual = ",
+      ifelse(is.finite(residual_normalized),
+             round(residual_normalized, 2),
+             "NA")
+    )
   ) %>%
   addLegend(
-  position = "bottomright",
-  pal      = pal_bin,
-  values   = res_trim,
-  title    = "Residual",
-  opacity  = 1,
-  labFormat = labelFormat(
-    transform = function(x) round(x, -3),          # round to nearest 1000
-    big.mark  = ",",                               # add commas
-    digits    = 0                                  # no decimals
-  )
+    position = "bottomright",
+    pal      = pal_bin,
+    values   = res_trim,
+    title    = "Normalized Residual",
+    opacity  = 1,
+    labFormat = labelFormat(
+      transform = identity,
+      digits    = 2
+    )
   ) %>%
   addLegend(
     "bottomright",
-    colors  = "#FFFFFF", labels = "0", opacity = 1, title = NULL
+    colors  = "#FFFFFF",
+    labels  = "0",
+    opacity = 1,
+    title   = NULL
   )
 ```
 

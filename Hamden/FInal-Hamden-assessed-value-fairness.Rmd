@@ -15,12 +15,13 @@ library(corrplot)
 library(MASS)
 library(leaflet)
 ```
+A Hamden homeowner saw a large assessment increase shortly after purchasing and wanted to know whether the new assessed value is fair. In order to answer this question, we attempted to recreate the assessor valuation process, by using recent sales to build a pricing model, then applying it to all properties. By comparing predictions to assessments, we determined whether the assessor's values align with our estimate of value.  
 
 # read in and join data
 ```{r}
 # read in CT property and sales data
 sale_data <- read_excel("sales_data.xlsx")
-hamden_data <- read_csv("hamden_data_complete.csv")
+hamden_data <- read_csv("final_data.csv")
 
 # glance at data
 head(hamden_data)
@@ -39,6 +40,7 @@ head(merged)
 names(merged)
 head(merged$Location)
 ```
+The histogram below shows the distribution of ASR (Assessed Value/Sale Price ratio). 
 
 # look at data relationships
 ```{r}
@@ -78,6 +80,8 @@ ggplot(merged, aes(x = ASR)) +
   )
 ```
 
+The histogram is approximately centered around 0.70, suggesting that on average, properties are properly assessed. This is because the statutory level of assessed value is 70% of fair market value in Connecticut. 
+
 # prep data
 ```{r}
 model_data <- merged %>%
@@ -89,10 +93,10 @@ model_data <- merged %>%
     Number.of.Bedroom = as.numeric(Number.of.Bedroom),
     Number.of.Baths   = as.numeric(Number.of.Baths),
     Number.of.Half.Baths = as.numeric(Number.of.Half.Baths)
-  ) %>% 
-  rename(`Sale_2024` = `Sale Price`)
+  )
 ```
 
+We first performed correlation analysis and best subsets regression to identify which property features are most predictive of sale price.
 
 # model selection
 ```{r}
@@ -120,6 +124,20 @@ summary(stepwise_bic_model)
 stepwise_aic_model <- stepAIC(full_model, direction = "both", trace = FALSE)
 summary(stepwise_aic_model)
 ```
+
+The correlation plot includes the following variables: Previous Year Assessed Total, Land Acres, Living Area, Effective Area, Total Rooms, Number of Bedroom, Number of Baths, Number of Half Baths, Sale Price, ayb, and eyb. All pairs of variables except Number of Baths and Number of Half Baths had positive or neutral correlations. Living Area and Previous Year Assessed Total, Effective Area and Previous Year Assessed Total, and Living Area and Effective Area had the strongest, positive correlations. Previous Year Assessed Total was also strongly correlated with Total Rooms and Baths. 
+
+Next, we used BIC-based stepwise selection and AIC-based stepwise selection to decide which predictors to use in our model. 
+
+AIC-based stepwise selection chose a model with 3 predictors: Sale Price, eyb, and Total Rooms, yielding an AIC = -1955.5 and R^2 of about 0.90. 
+
+
+1. Based on Adjusted R^2, the model with 9 predictors (Land Acres, Living Area, Effective Area, Total Rooms, Number of Bedrooms, Number of Baths, ayb, eyb, and Sale Year) is best. It yields an Adjusted R^2 of 0.563 and demonstrates that Sale Year is strongly predictive, and many of the variables matter.
+
+2. Based on BIC, the model with 4 predictors (Land Acres, Effective Area, Total Rooms, and Sale Year) is best. This model yielded an Adjusted R^2 that is almost the same as the first model (0.557).  
+
+3.  Based on Mallows' Cp, the model with all 9 variables is best.
+
 # model training
 ```{r}
 for(i in 1:nrow(model_data)){
@@ -198,7 +216,7 @@ hamden_geo <- read_csv("final_data.csv")
 # See what type of object it is
 class(centroids)
 
-# Peek at the data
+# Look at the data
 head(centroids)
 head(hamden_geo)
 
