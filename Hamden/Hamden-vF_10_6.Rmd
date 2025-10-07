@@ -1,0 +1,540 @@
+---
+title: "Final Hamden Assessed Value Fairness Report"
+author: "Lee-Ann Kao, Jake Todd, Ashley Yen"
+date: "2025-09-18"
+output: html_document
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# load libraries
+library(dplyr)
+library(readxl)
+library(rvest)
+library(ggplot2)
+library(tidyverse)
+library(corrplot)
+library(MASS)
+library(leaflet)
+library(RColorBrewer)
+library(scales)
+library(cv)
+```
+
+# Introduction
+
+A Hamden resident who recently purchased his house had his assessed property value significantly increase within a year of the purchase. He began to question whether the assessed value was fair. Our goal is to determine whether the assessed values for residential properties in Hamden, CT are fair and determine if there is any evidence to support contesting the assessed value. 
+
+In order to answer this question, we used 2009 and 2024 Hamden sales to build a sale pricing model, then applied it to all properties in an attempt to get the would-be 2024 sale price for all homes in Hamden. By comparing our predicted 2024 sale price to the actual assessments in 2023, we determined whether the assessor's values align with our estimate of value and are therefore "fair."
+
+# Reading, Cleaning, and Merging the Data
+
+First, we read in the sales data, CT property data, and Hamden html files. We filtered the sales data and CT property data to only include single family homes in Hamden. We then extracted the sale date and sale price from the html files and merged it with the sales data. Next, we read in the 2009 data and extracted the sale price from the html files. Finally, we combined all of this data into one dataset for analysis (with 2009 and 2024 sales in separate rows), and added centroid/location data.
+```{r, eval=FALSE, warning=FALSE, message=FALSE}
+# read in sales data
+sale_data <- read_excel("sales_data.xlsx")
+sale_data = sale_data %>% 
+  filter(Description == 'Single Fam M01') %>%
+  rename(
+    Sale.Price.2024 = 'Sale Price',
+    Sale.Date.2024 = 'Sale Date'
+  )
+
+# read in CT property 
+hamden_data <- read_csv("Connecticut_CAMA_and_Parcel_Layer_3895368049124948111.csv")
+hamden_data = hamden_data %>% 
+  filter(Town_Name == "Hamden", Unit_Type == "Single Fam M01")
+
+# read in Hamden html files
+for(i in 1:nrow(hamden_data)){
+  hamden_data$PID[i] <- str_split(hamden_data$link[i],"-")[[1]][2]
+}
+hamden_data$PID <- as.numeric(hamden_data$PID)
+
+hamden_data$Sale.Date <- NA
+hamden_data$Sale.Price <- NA
+
+hamden_data$PID <- as.numeric(hamden_data$PID)
+for(i in 1:nrow(hamden_data)){
+  temp_html <- read_html(paste0('Hamden_Sept2025/',hamden_data$PID[i],'.html'))
+  tables <- temp_html %>%
+    html_elements("table") %>%
+    html_table(fill = TRUE)
+  if (length(tables) >= 5) {
+    sale_table <- tables[[5]]
+    sale_table <- sale_table[!sale_table$X1 == "", ]
+    sale_table <- sale_table %>%
+      pivot_wider(names_from = X1, values_from = X2)
+    
+    if ("Sale Date" %in% names(sale_table)) {
+      hamden_data$Sale.Date[i] <- sale_table$`Sale Date`[1]
+    }
+    if ("Sale Price" %in% names(sale_table)) {
+      hamden_data$Sale.Price[i] <- sale_table$`Sale Price`[1]
+    }
+    val_table <- tables[[3]]
+    hamden_data$`Current Year Assessment`[i] <- val_table$Total
+    hamden_data$`Current Year Assessment`[i] <- str_replace_all(hamden_data$`Current Year Assessment`[i], '[\\$,]', '')
+  }
+}
+
+hamden_data <- hamden_data %>%
+  dplyr::select(-'Sale Date', -'Sale Price')
+
+# read in 2009 data
+d2009 <- read_csv("Hamden2009.csv")
+d2009 = d2009 %>% rename('PID' = 'pid','Number.of.Bedroom' = 'bedrooms', 'Number.of.Baths' = 'bathrooms', 'Number.of.Half.Baths' = 'halfbaths', 'Living.Area' = 'livingarea', 'Land.Acres' = 'landsize', 'Current Year Assessment' = 'assessedvalue', 'Total.Rooms' = 'totalrooms', 'ayb' = 'yearbuilt')
+d2009$Sale <- rep(NA, nrow(d2009))
+d2009$Year <- rep(2009, nrow(d2009))
+hamden_data$Year <- rep(2024, nrow(hamden_data))
+
+# left join
+sale_data$Location <- paste(sale_data$`Property Number`, sale_data$`Street Name`)
+merged <- left_join(hamden_data, sale_data, by = "Location")
+merged = merged %>% rename('Sale' = 'Sale.Price.2024')
+colnames(merged) <- gsub(" ", ".", colnames(merged))
+```
+```{r, eval = FALSE, warning=FALSE, message=FALSE}
+for(i in 1:nrow(d2009)){
+  temp_html <- read_html(paste0('Hamden_Sept2025/',d2009$PID[i],'.html'))
+  
+  if(is.null(temp_html)){
+    next
+  }
+  
+  tables <- temp_html %>% 
+    html_elements("table") %>%   
+    html_table(fill = TRUE)
+  if(length(tables) < 6){
+    next
+  }
+  sale_table <- tables[[6]]
+  sale_year <- c()
+  for(j in 1:nrow(sale_table)){
+    sale_year[j] <- str_split(sale_table$`Sale Date`[j], '/')[[1]][3]
+  }
+  if(max(as.numeric(str_replace_all(sale_table$`Sale Price`[which(sale_year == 2009)], '[\\$,]', ''))) > 0) {
+    d2009$Sale[i] <- max(as.numeric(str_replace_all(sale_table$`Sale Price`[which(sale_year == 2009)], '[\\$,]', '')))
+  } else {
+    d2009$Sale[i] <- NA
+  }
+}
+merged <- merged %>% rename(PID = PID.x)
+merged <- merged %>% rename(`Current Year Assessment` = `Current.Year.Assessment.x`)
+same_cols <- intersect(colnames(merged), colnames(d2009))
+merged <- rbind(subset(merged, select = same_cols), subset(d2009, select = same_cols))
+merged <- merged %>% group_by(PID) %>% filter(n() > 1) %>% ungroup()
+merged <- merged %>% arrange(PID)
+```
+
+```{r, eval=FALSE, warning = FALSE}
+# add in centroid/location data
+centroids <- readRDS("centroids.no.geometry.rds")
+centroids <- centroids[centroids$Town_Name == 'HAMDEN', ]
+for(i in 1:nrow(centroids)){
+  centroids$PID[i] <- str_split(centroids$Link[i],"-")[[1]][2]
+}
+centroids$PID <- as.numeric(centroids$PID)
+model_data <- merged %>%
+ left_join(centroids, by = c("PID" = "PID"))
+
+# write csv
+write.csv(model_data, "model_data.csv", row.names = FALSE)
+```
+
+# Assessed Value/Sale Price Ratio (ASR) Analysis
+
+First, we looked at the Assessed Value/Sale Price ratio (ASR) for homes sold in 2024 to understand if assessed value is considered "fair" in 2024. The histogram and scatterplot below show the distribution of ASR for homes sold in 2024, comparing with 2024 assessed values.
+
+The median assessed value over sale price ratio for 2024 is 0.6602581, which is slightly lower than the statutory level of assessed value ratio of 0.7 for fair market value in Connecticut. 
+
+From the Leaflet Analysis, we see that almost all ASRs for homes sold in 2024 are below .7. The lowest ASRs are in the Northeast part of Hamden, while the highest ASRs are in the Southeast region. There seems to be more variability in ASR in Southern Hamden, especially compared to the Northwest region, which is predominantly homes that have ASRs of .7 and are most accurately assessed. The second Leaflet plots the 2024 Sales Price of homes
+
+```{r, echo=FALSE}
+# read csv
+model_data <- read.csv("model_data.csv")
+model_data$Current.Year.Assessment <- as.numeric(model_data$Current.Year.Assessment)
+# compute ASR and Equalized Ratio for 2024 sales
+model_data <- model_data %>%
+  mutate(
+    ASR = model_data$Current.Year.Assessment / Sale
+  )
+
+# Filter to homes sold in 2024
+df_2024 <- filter(model_data, !is.na(ASR) & ASR < 2, Year == 2024)
+
+# median of data
+median(df_2024$ASR, na.rm = TRUE)
+
+# Scatterplot of Assessed Value (2024) vs Actual Sale Price (2024)
+ggplot(df_2024, aes(x = Sale, y = Current.Year.Assessment)) +
+  geom_point(color = "blue", alpha = 0.5) +
+  geom_abline(slope = 0.7, intercept = 0, linetype = "dashed") +
+  labs(title = "Assessed Value vs Actual Sale Price (2024)",
+       x = "Actual Sale Price (2024)",
+       y = "Assessed Value (2024)")
+
+# Histogram of ASR 2024
+ggplot(df_2024, aes(x = ASR)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = 0.7, color = "red", linetype = "dashed") +
+  labs(
+    title = "Histogram of ASR for Homes Sold in 2024",
+    x = "Assessment-to-Sale Ratio (ASR)",
+    y = "Number of Homes"
+  )
+```
+
+```{r, echo=FALSE}
+# Leaflet of ASRs of homes sold in 2024. 
+leaflet(df_2024) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~point.x, lat = ~point.y,
+    radius = 5,
+    color = ~colorNumeric(palette = c("blue","white","red"), domain = df_2024$ASR)(ASR),
+    fillOpacity = 0.7,
+    popup = ~paste0(Location, "<br>ASR = ", round(ASR, 2))
+  ) %>%
+  addLegend(
+    "bottomright", 
+    pal = colorNumeric(c("blue","white","red"), df_2024$ASR),
+    values = ~ASR,
+    title = "ASR",
+    opacity = 1
+  )
+```
+
+```{r, echo=FALSE}
+# Leaflet of Sales Prices of homes sold in 2024
+# converts sales price 2024 to numeric
+sp_raw <- suppressWarnings(as.numeric(df_2024$Sale))
+finite <- is.finite(sp_raw)
+if (!any(finite)) stop("No finite SalePrice values.")
+
+sp <- sp_raw[finite]
+
+# create quantile bins for sales price, 7 bins
+n_bins <- 7
+probs  <- seq(0, 1, length.out = n_bins + 1)
+bins   <- as.numeric(quantile(sp, probs = probs, na.rm = TRUE))
+bins   <- sort(unique(bins)) # drop duplicates
+if (length(bins) < 2) bins <- range(sp) # fallback if everything is equal
+
+# uses ColorBrewer palette yellow/orange/red
+n_palette <- max(3, min(9, length(bins) - 1))
+pal_vec   <- brewer.pal(n_palette, "YlOrRd")
+
+# If bins exceed palette size, interpolate colors
+if ((length(bins) - 1) != length(pal_vec)) {
+  pal_vec <- colorRampPalette(pal_vec)(length(bins) - 1)
+}
+
+# building the bin-based color function
+pal_bin <- colorBin(
+  palette  = pal_vec,
+  bins     = bins,
+  domain   = sp_raw,
+  right    = TRUE,
+  na.color = "transparent"
+)
+
+# format legend labels; prettyNum formats numbers with commas
+fmt_k <- function(x) paste0("$", prettyNum(round(x, -3), big.mark = ","))
+lab_ranges <- paste0(fmt_k(bins[-length(bins)]), " – ", fmt_k(bins[-1]))
+
+# create the leaflet map
+leaflet(df_2024) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~point.x, lat = ~point.y,
+    radius = 5,
+    stroke = TRUE, color = "#8c8c8c", weight = 0.6,
+    fill = TRUE, fillColor = ~pal_bin(as.numeric(Sale)), fillOpacity = 0.85,
+    popup = ~paste0(
+      Location, "<br>Sale Price = ",
+      ifelse(is.finite(as.numeric(Sale)),
+             dollar(round(as.numeric(Sale), -3)),
+             "NA")
+    )
+  ) %>%
+  # Use manual legend to show explicit ranges per bin
+  addLegend(
+    position = "bottomright",
+    colors   = pal_vec,
+    labels   = lab_ranges,
+    title    = "Sale Price (quantile bins)",
+    opacity  = 1
+  )
+
+```
+
+# Variable Analysis
+
+Next we performed correlation analysis to identify which property features to consider including in our model predicting sale price in 2024. We see that Living Area, Number of Baths, Total Rooms, and Year all have the strongest correlations with Sale Price. However, there appear to be correlations between these potential predictor variables, and we therefore need to be careful of collinearity when building our model. For example, Living Area is highly correlated with Number of Baths and Total Rooms.
+
+We also looked at scatterplots of all potential variables with Sale Price in order to see if variables meet the linear relationship assumption for linear regression. There appear to be linear relationships between Sale Price and Living Area, Number of Baths, and Total Rooms. However, there may be nonlinear relationships between Sale Price and Land Acres and Year. In terms of potential transformations, we see that Sale Price is right-skewed and may benefit from a log transformation.
+
+```{r, echo=FALSE}
+# split 
+train_data = model_data[!is.na(model_data$`Sale`), ] 
+train_data = train_data[train_data$Sale > 1000, ] %>% filter(ASR < 1)
+val_data = train_data[1:round(nrow(train_data)/3,0),]
+train_data = train_data[(round(nrow(train_data)/3,0)+1):nrow(train_data),]
+
+# limit to potentially relevant variables
+train_model_data <- train_data[, c('Land.Acres', 'Living.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale', 'ayb', 'Year')]
+val_model_data <- val_data[, c('Land.Acres', 'Living.Area', 'Total.Rooms', 'Number.of.Bedroom', 'Number.of.Baths', 'Sale', 'ayb', 'Year')]
+
+# make correlation matrix
+cor1 <- cor(train_model_data)
+
+corrplot.mixed(cor1, lower.col = "black", upper = "ellipse", tl.col = "black", number.cex = .7, tl.pos = "lt", tl.cex=.7, sig.level = .05)
+
+# make scatterplot matrix
+library(psych)
+pairs.panels(train_model_data, 
+             method = "pearson",
+             hist.col = "#00AFBB",
+             density = TRUE
+             )
+```
+
+# Model Building
+
+Next, we built a predictive model using properties that actually sold in 2024. We performed stepwise regression using AIC and 10-fold cross-validation to select the best model. The final model includes Living Area, Number of Baths, Total Rooms, Year, and Land Acres as predictors. Based on cross-validation, there is no sign of significant overfitting, as our full-sample RMSE (0.1700736) is similar to the average cross-validated RMSE (0.1728461).
+
+Finally, the residual plots below show that the linear model assumptions are reasonably satisfied. The residuals appear to be normally distributed, homoskedastic, and there is no obvious pattern in the residuals vs fitted values plot. However, there appears to be one extreme outlier with high leverage.
+
+We plotted our predicted versus actual sale prices in 2009 and 2024 to see how well our model performed. The plot shows that our predicted sale prices are generally close to the actual sale prices, with most points falling near the 45-degree line. However, we can see that for higher sale prices, our model tends to underpredict the sale price. We then applied the final model to properties that did not sell in 2024 to predict what those properties would have sold for in 2024. 
+
+```{r, echo=FALSE}
+# stepwise regression using AIC
+set.seed(4250)
+m.full <- lm(log(Sale) ~ ., data = train_model_data)
+m.null <- lm(log(Sale) ~ 1, data = train_model_data)
+m.select <- stepAIC(
+  m.null,
+  direction = "forward",
+  trace = FALSE,
+  scope = list(lower =  ~ 1, upper = formula(m.full))
+)
+summary(m.select)
+
+# 10-fold cross-validation for stepwise regression
+cv.select <- cv(
+  selectStepAIC,
+  data = train_model_data,
+  seed = 4250,
+  working.model = m.null,
+  direction = "forward",
+  scope = list(lower =  ~ 1, upper = formula(m.full))
+)
+summary(cv.select)
+compareFolds(cv.select)
+
+# final model
+fit <- m.select
+pred_sale <- predict(fit, newdata = model_data) 
+model_data$predSale <- exp(pred_sale)
+
+# linear model assumptions
+plot(fit)
+```
+```{r}
+fit <- m.select
+pred_sale <- predict(fit, newdata = val_model_data) 
+val_data$predSale <- exp(pred_sale)
+
+ggplot(data = val_data, aes(x = Sale, y = predSale)) +
+  geom_point(color = "blue", alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Predicted vs Actual Sale Price",
+       x = "Actual Sale Price",
+       y = "Predicted Sale Price")
+```
+
+# Assessment of Fairness Given the Model
+ 
+The plot of Sale Price and Assessed Value vs. Predicted Sale of properties in 2024 shows Appraised Value in red and Actual Sale price in blue. The dashed line represents where the predicted price equals the actual value. Both the assessed value and actual sale price generally match our predicted price (except at high predicted sale prices), indicating that the assessor's values are generally fair. This is further supported by our graphs of Predicted Sale Price vs Appraised Value and Appraised Value vs Actual Sale Price, which show that both the assessed values and actual sale prices are generally close to our predicted sale prices and each other.
+
+Looking at the variables in our model, we see that Living Area, Year, and Total Rooms are all significant predictors of sale price. These variables are likely included in the assessor's model as well. However, we are most likely missing some important variables that the assessor uses, such as neighborhood effects or recent renovations, which could explain why our model does not perfectly predict sale prices. If we had more variables to include in our model (i.e. values that were present in only one of 2009 or 2024 but not both), we may have been able to build a model more close to the assessor's and have been able to assess the fairness of the variables the assessor included.
+
+```{r, echo=FALSE}
+model_data_2024 <- model_data[model_data$Year == 2024,]
+test_data <- model_data[is.na(model_data$`Sale`), ]
+
+# values
+ggplot(model_data_2024, aes(x = predSale)) +
+  geom_point(aes(y = Current.Year.Assessment / 0.70), color = "red", alpha = 0.5) +
+  geom_point(aes(y = parse_number(as.character(Sale))), color = "blue", alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  labs(title = "Predicted vs Actual vs Assessed Market Values (2024)",
+       x = "Predicted Price (2024)",
+       y = "Actual Value (2024",
+       caption = "Blue = Actual Sale, Red = Assessed Value / 0.7")
+
+test_data$Appraised <- test_data$Current.Year.Assessment / 0.7
+test_data$residual <- test_data$Sale - test_data$Appraised
+test_data$residual_normalized <- test_data$residual/test_data$Appraised
+
+ggplot(data = train_data, aes(x = Current.Year.Assessment/0.7, y = Sale)) +
+  geom_point(color = "blue", alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Appraised Value vs Actual Sale Price (2009 & 2024)",
+       x = "Appraised Value",
+       y = "Actual Sale Price")
+
+ggplot(data = test_data, aes(x = Appraised, y = predSale)) +
+  geom_point(color = "blue", alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Predicted Sale Price vs Appraised Value (2009 & 2024)",
+       x = "Appraised Value",
+       y = "Predicted Sale Price")
+
+ggplot(data = test_data[test_data$Year == 2024,], aes(x = Appraised, y = predSale)) +
+  geom_point(color = "blue", alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Predicted Sale Price vs Appraised Value (2024 only)",
+       x = "Appraised Value",
+       y = "Predicted Sale Price")
+
+# model variables
+summary(fit)
+```
+
+# Subsets Analysis
+
+The analysis below uses the properties that did not sell in 2024, and therefore we do not have actual sale prices to compare to assessed values. However, we can still analyze the ASR distribution and residuals from our model to assess fairness of assessed values.
+
+From the boxplot, we see that median ASR, using the most recent assessed value for all homes and the 2024 sales price that our model predicted, is less than .5, which is well below the standard of .7. There are several properties with ASRs above 1.0, meaning that either our sales price model is  underestimating the value of some homes, or the assessed value is overestimating. Because homes of higher sales price seem to have higher residuals, we also calculated normalized residual, which is residual divided by the appraised value. 
+
+We plotted the ASR for each property in Hamden on a map, using the property's latitude and longitude to plot. Each property is displayed as a point, with the color indicating the ASR value. Properties with high ASRs (over-assessed) are red, and those with low ASRs (under-assessed) are blue. This helps us determine whether location plays a role in fairness of value. 
+
+The Leaflet plot shows that there is no clear geographic trend for these higher ASRs, although several seem to be in the Northwest region of Hamden. Overall, ASR is well below .7 and fairly consistently blue across the city. 
+
+The following Leaflet plots normalized residuals. There is a clear region of large, positive residuals in the bottom center of Hamden. There also seems to be a cluster of negative residuals in the Northwest region, which is where more expensive homes are. This area also had higher ASRs. We think that our model may be underestimating sales price for more expensive homes. 
+
+```{r, echo=FALSE}
+#Leaflet of ASRs for testing data
+leaflet(model_data) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~point.x, lat = ~point.y,
+    radius = 5,
+    color = ~colorNumeric(palette = c("blue","white","red"), domain = model_data$ASR)(ASR),
+    fillOpacity = 0.7,
+    popup = ~paste0(Location, "<br>ASR = ", round(ASR, 2))
+  ) %>%
+  addLegend(
+    "bottomright", 
+    pal = colorNumeric(c("blue","white","red"), model_data$ASR),
+    values = ~ASR,
+    title = "ASR",
+    opacity = 1
+  )
+```
+
+
+```{r, echo=FALSE}
+# Leaflet of residuals (test data)
+# symmetric trim to remove outliers where sales price is NA/0
+res <- test_data$residual
+m   <- quantile(abs(res), 0.95, na.rm = TRUE)
+dom <- c(-m, m)
+
+res_trim <- pmin(pmax(res, dom[1]), dom[2])
+
+# build quantile breaks, separately for negative and positive
+neg_vals <- res_trim[res_trim < 0]
+pos_vals <- res_trim[res_trim > 0]
+
+neg_breaks <- if (length(neg_vals)) quantile(neg_vals, probs = c(0, .25, .5, .75, 1), na.rm = TRUE) else c(-1e-9, 0)
+pos_breaks <- if (length(pos_vals)) quantile(pos_vals, probs = c(0, .3, .6, .8, .9, .97, 1), na.rm = TRUE) else c(0, 1e-9)
+
+# Ensure 0 is in the break set exactly once
+breaks <- sort(unique(c(neg_breaks, 0, pos_breaks)))
+
+# Palettes per side (multi-hue for positives)
+idx0        <- which(breaks == 0)
+n_neg_bins  <- idx0 - 1
+n_pos_bins  <- (length(breaks) - 1) - n_neg_bins
+
+cols_neg <- if (n_neg_bins > 0) rev(brewer.pal(max(3, n_neg_bins), "Blues"))[seq_len(n_neg_bins)] else character(0)
+cols_pos <- if (n_pos_bins > 0)      brewer.pal(max(3, n_pos_bins), "YlOrRd")[seq_len(n_pos_bins)] else character(0)
+
+pal_bin <- colorBin(
+  palette  = c(cols_neg, cols_pos),
+  bins     = breaks,
+  right    = TRUE,
+  na.color = "transparent"
+)
+
+# Compute colors for each point
+cols <- pal_bin(res_trim) # colors for trimmed values
+cols[is.na(res)]      <- NA # keep NAs transparent
+cols[!is.na(res) & res == 0] <- "#FFFFFF" 
+
+# Leaflet Plot
+leaflet(test_data) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~point.x, lat = ~point.y,
+    radius = 5,
+    stroke = TRUE, color = "#999999", weight = 0.5,
+    fill = TRUE, fillColor = ~cols, fillOpacity = 0.8,
+    popup = ~paste0(Location, "<br>residual = ", round(residual, 2))
+  ) %>%
+  addLegend(
+  position = "bottomright",
+  pal      = pal_bin,
+  values   = res_trim,
+  title    = "Residual",
+  opacity  = 1,
+  labFormat = labelFormat(
+    transform = function(x) round(x, -3),          # round to nearest 1000
+    big.mark  = ",",                               # add commas
+    digits    = 0                                  # no decimals
+  )
+  ) %>%
+  addLegend(
+    "bottomright",
+    colors  = "#FFFFFF", labels = "0", opacity = 1, title = NULL
+  )
+```
+
+
+```{r, echo=FALSE}
+# Data prep: coerce to numeric & drop NAs
+df <- test_data
+df$SalePrice_num <- suppressWarnings(as.numeric(df$Sale))
+df$residual_num  <- suppressWarnings(as.numeric(df$residual))
+df2 <- subset(df, is.finite(SalePrice_num) & is.finite(residual_num))
+
+# Correlation stats
+ct <- cor.test(df2$SalePrice_num, df2$residual_num)
+ann_txt <- sprintf("Pearson r = %.3f\np = %.3g\nn = %d", ct$estimate, ct$p.value, nrow(df2))
+
+# Scatter with linear fit
+p <- ggplot(df2, aes(x = SalePrice_num, y = residual_num)) +
+  geom_point(alpha = 0.35, size = 1.6) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 0.9, color = "firebrick") +
+  annotate("text", x = Inf, y = Inf, label = ann_txt, hjust = 1.02, vjust = 1.1, size = 3.6) +
+  scale_x_continuous(labels = label_dollar(accuracy = 1)) +
+  labs(
+    x = "Sale Price",
+    y = "Residual",
+    title = "Residuals vs. Sale Price",
+  ) +
+  theme_minimal(base_size = 12)
+
+print(p)
+```
+
+# Conclusion
+
+Our analysis shows that assessed value in 2024 is generally fair. Our predictive model for sale price in 2024 indicates that assessed values generally align with our predicted prices and actual sale prices, suggesting that the assessor's values are reasonable.
+
+Through our model, we found that certain property features, such as Living Area and Total Rooms, are strong predictors of sale price and are likely included in the assessor's model. The residual analysis indicates that the model assumptions are reasonably satisfied, and there is no significant overfitting based on cross-validation results.
+
+However, there are limitations to our analysis. Our model is based on the assumption that the assessor uses a similar set of variables and a linear regression approach, which may not be the case. This model does not account for all possible factors that could influence property values, such as neighborhood effects or recent renovations. For example, we see that our model may be underestimating sale prices for more expensive homes, as indicated by the positive correlation between sale price and residuals. This suggests that the assessor may be using additional variables or a different modeling approach for higher-value properties.
+
