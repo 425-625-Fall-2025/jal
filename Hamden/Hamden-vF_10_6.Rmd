@@ -147,7 +147,7 @@ First, we looked at the Assessed Value/Sale Price ratio (ASR) for homes sold in 
 
 The median assessed value over sale price ratio for 2024 is 0.6602581, which is slightly lower than the statutory level of assessed value ratio of 0.7 for fair market value in Connecticut. 
 
-From the Leaflet Analysis, we see that almost all ASRs for homes sold in 2024 are below .7. The lowest ASRs are in the Northeast part of Hamden, while the highest ASRs are in the Southeast region. There seems to be more variability in ASR in Southern Hamden, especially compared to the Northwest region, which is predominantly homes that have ASRs of .7 and are most accurately assessed. The second Leaflet plots the 2024 Sales Price of homes
+From the Leaflet Analysis, we see that almost all ASRs for homes sold in 2024 are below .7. The lowest ASRs are in the Northeast part of Hamden, while the highest ASRs are in the Southeast region. There seems to be more variability in ASR in Southern Hamden, especially compared to the Northwest region, which is predominantly homes that have ASRs of .7 and are most accurately assessed. The second Leaflet plots the 2024 Sales Price of homes sold in 2024. We see that the more expensive homes are in the Northwest and Southeast regions. It's difficult to tell whether there is a clear link between ASR and home price, but it looks like ASRs may be higher and more variable in these areas, suggesting that the assessor may assessing more expensive homes more inconsistently.
 
 ```{r, echo=FALSE}
 # read csv
@@ -374,7 +374,7 @@ ggplot(model_data_2024, aes(x = predSale)) +
        caption = "Blue = Actual Sale, Red = Assessed Value / 0.7")
 
 test_data$Appraised <- test_data$Current.Year.Assessment / 0.7
-test_data$residual <- test_data$Sale - test_data$Appraised
+test_data$residual <- test_data$predSale - test_data$Appraised
 test_data$residual_normalized <- test_data$residual/test_data$Appraised
 
 ggplot(data = train_data, aes(x = Current.Year.Assessment/0.7, y = Sale)) +
@@ -406,28 +406,29 @@ summary(fit)
 
 The analysis below uses the properties that did not sell in 2024, and therefore we do not have actual sale prices to compare to assessed values. However, we can still analyze the ASR distribution and residuals from our model to assess fairness of assessed values.
 
-From the boxplot, we see that median ASR, using the most recent assessed value for all homes and the 2024 sales price that our model predicted, is less than .5, which is well below the standard of .7. There are several properties with ASRs above 1.0, meaning that either our sales price model is  underestimating the value of some homes, or the assessed value is overestimating. Because homes of higher sales price seem to have higher residuals, we also calculated normalized residual, which is residual divided by the appraised value. 
+We see that in general ASR, using the most recent assessed value for all homes and the 2024 sales price that our model predicted, is less than .5, which is well below the standard of .7. There are several properties with ASRs above 1.0, meaning that either our sales price model is  underestimating the value of some homes, or the assessed value is overestimating. Because homes of higher sales price seem to have higher residuals, we also calculated normalized residual, which is residual divided by the appraised value. 
 
 We plotted the ASR for each property in Hamden on a map, using the property's latitude and longitude to plot. Each property is displayed as a point, with the color indicating the ASR value. Properties with high ASRs (over-assessed) are red, and those with low ASRs (under-assessed) are blue. This helps us determine whether location plays a role in fairness of value. 
 
-The Leaflet plot shows that there is no clear geographic trend for these higher ASRs, although several seem to be in the Northwest region of Hamden. Overall, ASR is well below .7 and fairly consistently blue across the city. 
+The Leaflet plot shows ASRs are the lowest for homes in the southern center region. Overall, ASR is well below .7 and fairly consistently blue across the city. 
 
-The following Leaflet plots normalized residuals. There is a clear region of large, positive residuals in the bottom center of Hamden. There also seems to be a cluster of negative residuals in the Northwest region, which is where more expensive homes are. This area also had higher ASRs. We think that our model may be underestimating sales price for more expensive homes. 
+The second Leaflet plots normalized residuals. There is a clear region of large, positive residuals in the bottom center of Hamden. There also seems to be a cluster of negative residuals in the Northwest region, which is where more expensive homes are. This area also had higher ASRs. We think that our model may be underestimating sales price for more expensive homes, and overestimating sales price for less expensive homes. 
 
 ```{r, echo=FALSE}
 #Leaflet of ASRs for testing data
-leaflet(model_data) %>%
+test_data$ASR <- test_data$Current.Year.Assessment / test_data$predSale
+leaflet(test_data) %>%
   addTiles() %>%
   addCircleMarkers(
     lng = ~point.x, lat = ~point.y,
     radius = 5,
-    color = ~colorNumeric(palette = c("blue","white","red"), domain = model_data$ASR)(ASR),
+    color = ~colorNumeric(palette = c("blue","white","red"), domain = test_data$ASR)(ASR),
     fillOpacity = 0.7,
     popup = ~paste0(Location, "<br>ASR = ", round(ASR, 2))
   ) %>%
   addLegend(
     "bottomright", 
-    pal = colorNumeric(c("blue","white","red"), model_data$ASR),
+    pal = colorNumeric(c("blue","white","red"), test_data$ASR),
     values = ~ASR,
     title = "ASR",
     opacity = 1
@@ -438,7 +439,7 @@ leaflet(model_data) %>%
 ```{r, echo=FALSE}
 # Leaflet of residuals (test data)
 # symmetric trim to remove outliers where sales price is NA/0
-res <- test_data$residual
+res <- test_data$residual_normalized
 m   <- quantile(abs(res), 0.95, na.rm = TRUE)
 dom <- c(-m, m)
 
@@ -464,6 +465,7 @@ cols_pos <- if (n_pos_bins > 0)      brewer.pal(max(3, n_pos_bins), "YlOrRd")[se
 
 pal_bin <- colorBin(
   palette  = c(cols_neg, cols_pos),
+  domain   = test_data$residual,
   bins     = breaks,
   right    = TRUE,
   na.color = "transparent"
@@ -490,11 +492,7 @@ leaflet(test_data) %>%
   values   = res_trim,
   title    = "Residual",
   opacity  = 1,
-  labFormat = labelFormat(
-    transform = function(x) round(x, -3),          # round to nearest 1000
-    big.mark  = ",",                               # add commas
-    digits    = 0                                  # no decimals
-  )
+
   ) %>%
   addLegend(
     "bottomright",
@@ -506,7 +504,7 @@ leaflet(test_data) %>%
 ```{r, echo=FALSE}
 # Data prep: coerce to numeric & drop NAs
 df <- test_data
-df$SalePrice_num <- suppressWarnings(as.numeric(df$Sale))
+df$SalePrice_num <- suppressWarnings(as.numeric(df$predSale))
 df$residual_num  <- suppressWarnings(as.numeric(df$residual))
 df2 <- subset(df, is.finite(SalePrice_num) & is.finite(residual_num))
 
